@@ -156,6 +156,7 @@ async def readiness_check():
 @app.post("/api/v1/jobs", tags=["Jobs"])
 @rate_limit(calls="10/minute")
 async def create_job(
+    request: Request,
     file: UploadFile = File(..., description="Image file to process"),
     palette_hex_list: Optional[str] = Form(None, description="Comma-separated list of 15 hex colors"),
     background_tasks: BackgroundTasks = BackgroundTasks()
@@ -302,6 +303,7 @@ async def process_job_background(job_id: str, input_path: str, palette_list: Opt
 @app.post("/api/v1/process", response_model=ProcessImageResponse, tags=["Processing"])
 @rate_limit(calls="10/minute")
 async def process_image(
+    request: Request,
     file: UploadFile = File(..., description="Image file to process"),
     palette_hex_list: Optional[str] = Form(None, description="Comma-separated list of 15 hex colors"),
     pipeline: Gemini3Pipeline = Depends(get_pipeline)
@@ -435,6 +437,7 @@ async def download_file(filename: str):
 @app.post("/api/v1/phase1", tags=["Processing"])
 @rate_limit(calls="20/minute")
 async def process_phase1(
+    request: Request,
     file: UploadFile = File(...),
     pipeline: Gemini3Pipeline = Depends(get_pipeline)
 ):
@@ -483,6 +486,7 @@ async def process_phase1(
 @app.post("/api/v1/phase2", tags=["Processing"])
 @rate_limit(calls="20/minute")
 async def process_phase2(
+    request: Request,
     file: UploadFile = File(...),
     pipeline: Gemini3Pipeline = Depends(get_pipeline)
 ):
@@ -529,6 +533,7 @@ async def process_phase2(
 @app.post("/api/v1/phase3", tags=["Processing"])
 @rate_limit(calls="20/minute")
 async def process_phase3(
+    request: Request,
     file: UploadFile = File(...),
     pipeline: Gemini3Pipeline = Depends(get_pipeline)
 ):
@@ -575,6 +580,7 @@ async def process_phase3(
 @app.post("/api/v1/phase4", tags=["Processing"])
 @rate_limit(calls="20/minute")
 async def process_phase4(
+    request: Request,
     file: UploadFile = File(...),
     pipeline: Gemini3Pipeline = Depends(get_pipeline)
 ):
