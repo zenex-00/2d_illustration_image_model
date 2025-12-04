@@ -44,8 +44,10 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
 6. **Ports**: Add port `8000` (TCP)
 7. **Startup Command** (replace `YOUR_GITHUB_URL`):
    ```bash
-   cd /workspace && git clone YOUR_GITHUB_URL image_generation && cd image_generation && pip install -q -r requirements.txt && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && git clone YOUR_GITHUB_URL image_generation && cd /workspace/image_generation && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
+   
+   **Important**: Replace `YOUR_GITHUB_URL` with your actual GitHub repository URL (e.g., `https://github.com/username/repo-name`)
 8. **Pod Name**: `gemini3-training`
 9. Click **Deploy**
 
@@ -222,6 +224,7 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 
 ```bash
 cd /workspace/image_generation
+export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
 uvicorn src.api.server:app --host 0.0.0.0 --port 8000
 ```
 
@@ -251,8 +254,19 @@ ls /workspace/training_data/targets | wc -l
 ```bash
 # Re-download models:
 cd /workspace/image_generation
+export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
 python scripts/setup_model_volume.py --volume-path /models
 ```
+
+### ModuleNotFoundError: No module named 'src'
+
+If you see this error, set PYTHONPATH:
+
+```bash
+export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
+```
+
+Then retry your command. To make it permanent for the session, add to your startup command or run it before each Python command.
 
 ### Restart Pod
 
@@ -263,10 +277,21 @@ python scripts/setup_model_volume.py --volume-path /models
 5. Restart server:
    ```bash
    cd /workspace/image_generation
+   export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
    uvicorn src.api.server:app --host 0.0.0.0 --port 8000
    ```
 
 **Note**: Data in `/workspace` is lost on restart, but `/models` volume persists.
+
+### Package Installation Issues
+
+If `controlnet-aux` installation fails:
+- The version has been fixed in requirements.txt (>=0.0.10)
+- If you have an old requirements.txt, update it or run:
+  ```bash
+  sed -i 's/controlnet-aux>=0.4.0/controlnet-aux>=0.0.10/' requirements.txt
+  pip install -r requirements.txt
+  ```
 
 ---
 
@@ -286,6 +311,7 @@ find /workspace/training_output -name "*.safetensors"
 
 # Start server
 cd /workspace/image_generation
+export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
 uvicorn src.api.server:app --host 0.0.0.0 --port 8000
 
 # Start server in background

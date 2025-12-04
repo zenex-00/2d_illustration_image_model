@@ -18,7 +18,7 @@ groundingdino-py>=0.4.0
 lama-cleaner>=1.2.0
 
 # ControlNet
-controlnet-aux>=0.4.0
+controlnet-aux>=0.0.10
 
 # Background Removal
 rembg>=2.0.50
