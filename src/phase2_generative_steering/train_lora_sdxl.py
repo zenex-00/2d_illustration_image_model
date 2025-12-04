@@ -5,6 +5,7 @@ import json
 import torch
 import torch.nn.functional as F
 import argparse
+import random
 from pathlib import Path
 from typing import List, Tuple, Optional, Any
 from datetime import datetime
@@ -102,11 +103,15 @@ class LoRADataset:
         # Augment both images with same seed for consistency
         if self.augmentation:
             seed = np.random.randint(0, 2**32)
-            A.set_seed(seed)
+            # Set seed for Python's random and numpy (albumentations uses these)
+            random.seed(seed)
+            np.random.seed(seed)
             transformed = self.transform(image=input_array)
             input_tensor = transformed["image"]
             
-            A.set_seed(seed)
+            # Use same seed again for output image to ensure consistent augmentation
+            random.seed(seed)
+            np.random.seed(seed)
             transformed = self.transform(image=output_array)
             output_tensor = transformed["image"]
         else:
