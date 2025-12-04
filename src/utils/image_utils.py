@@ -10,6 +10,11 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Increase PIL's decompression bomb limit to handle large images
+# Default is ~178M pixels, we increase to 1B pixels for legitimate large images
+# This prevents DOS attacks while allowing high-resolution images for training
+Image.MAX_IMAGE_PIXELS = 1_000_000_000  # 1 billion pixels
+
 # Input validation constants
 MAX_IMAGE_SIZE_MB = 50
 MAX_IMAGE_DIMENSION = 4096

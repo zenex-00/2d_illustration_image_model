@@ -14,6 +14,10 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Increase PIL's decompression bomb limit to handle large images
+# This must be set before any Image.open() calls
+Image.MAX_IMAGE_PIXELS = 1_000_000_000  # 1 billion pixels
+
 
 def validate_uploaded_image(
     file: UploadFile,
