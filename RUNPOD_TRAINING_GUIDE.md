@@ -56,12 +56,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 3090/A10G/RTX 4090 (PyTorch 2.1)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git libgl1-mesa-glx libglib2.0-0 && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **For RTX 5090 (PyTorch 2.8+ required)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git libgl1-mesa-glx libglib2.0-0 && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **Important**: 
@@ -108,7 +108,8 @@ If you used `sleep infinity` as startup command or automated setup failed, run s
 
 ```bash
 # 1. Install git and system libraries (required for OpenCV)
-apt-get update && apt-get install -y git libgl1-mesa-glx libglib2.0-0
+export DEBIAN_FRONTEND=noninteractive
+apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata
 
 # 2. Clone repositories
 cd /workspace
@@ -486,6 +487,23 @@ pip install loguru
 
 Or the installation script now includes it automatically.
 
+### Container Stuck at tzdata Configuration Prompt
+
+**Error**: Container stops and waits at: `Please select the geographic area in which you live` (tzdata configuration)
+
+**Cause**: tzdata package installation requires interactive input, blocking automated setup.
+
+**Solution**: 
+- The startup commands now include `export DEBIAN_FRONTEND=noninteractive` and `tzdata` in apt-get install
+- If stuck in current pod, restart with updated startup command
+- Or set timezone non-interactively:
+  ```bash
+  export DEBIAN_FRONTEND=noninteractive
+  export TZ=UTC
+  ln -fs /usr/share/zoneinfo/$TZ /etc/localtime
+  dpkg-reconfigure -f noninteractive tzdata
+  ```
+
 ### Missing libGL.so.1 (OpenCV Issue)
 
 **Error**: `ImportError: libGL.so.1: cannot open shared object file: No such file or directory`
@@ -494,6 +512,7 @@ Or the installation script now includes it automatically.
 
 **Solution**:
 ```bash
+export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y libgl1-mesa-glx libglib2.0-0
 ```

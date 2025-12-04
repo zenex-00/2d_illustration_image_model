@@ -5,8 +5,9 @@
 set -e  # Exit on error
 
 echo "Installing system libraries required for OpenCV..."
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq libgl1-mesa-glx libglib2.0-0 > /dev/null 2>&1 || true
+apt-get install -y -qq libgl1-mesa-glx libglib2.0-0 tzdata > /dev/null 2>&1 || true
 
 echo "Installing core dependencies from requirements.txt..."
 pip install -r requirements.txt
