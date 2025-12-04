@@ -479,10 +479,15 @@ Or update startup command to include `rm -rf image_generation &&` before git clo
 **Cause**: ZoeDepth is not available on PyPI - it must be installed from GitHub.
 
 **Solution**: 
-- The `requirements.txt` has been updated to install from GitHub: `git+https://github.com/isl-org/ZoeDepth.git@v1.1.1`
+- The `requirements.txt` has been updated to install from GitHub: `git+https://github.com/isl-org/ZoeDepth.git`
 - If you have an old version of requirements.txt, update it or manually install:
   ```bash
-  pip install git+https://github.com/isl-org/ZoeDepth.git@v1.1.1
+  pip install git+https://github.com/isl-org/ZoeDepth.git
+  ```
+  
+  **Note**: We use the main branch (no specific tag) as the repository doesn't have version tags. If you encounter issues, you can try:
+  ```bash
+  pip install git+https://github.com/isl-org/ZoeDepth.git@main
   ```
 
 If `controlnet-aux` installation fails:

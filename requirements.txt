@@ -25,7 +25,7 @@ rembg>=2.0.50
 
 # Depth Estimation
 # Note: ZoeDepth must be installed from GitHub, not PyPI
-git+https://github.com/isl-org/ZoeDepth.git@v1.1.1
+git+https://github.com/isl-org/ZoeDepth.git
 
 # Upscaling
 basicsr>=1.4.2
