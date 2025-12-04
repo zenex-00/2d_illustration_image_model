@@ -272,16 +272,47 @@ def train_lora(
         except RuntimeError as e:
             error_msg = str(e)
             if "no kernel image" in error_msg.lower() or "compute capability" in error_msg.lower():
+                # Check if PyTorch version is too old for RTX 5090
+                pytorch_major_minor = tuple(map(int, pytorch_version.split('+')[0].split('.')[:2]))
+                requires_upgrade = pytorch_major_minor < (2, 8)
+                
+                if requires_upgrade:
+                    fix_cmd = "pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129"
+                    fix_cmd_nightly = "pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu121"
+                    error_detail = (
+                        f"CUDA compatibility error: {error_msg}\n\n"
+                        f"Your GPU ({gpu_name}) requires PyTorch 2.8.0 or higher with CUDA 12.9+ support.\n"
+                        f"Current PyTorch version: {pytorch_version}\n"
+                        f"RTX 5090 (compute capability sm_120) is only supported in PyTorch 2.8.0+\n"
+                        f"Note: PyTorch 2.5.1, 2.6.x, and 2.7.x do NOT support RTX 5090.\n\n"
+                        f"To fix, try this command in your pod terminal:\n"
+                        f"  {fix_cmd}\n\n"
+                        f"If that fails (cu129 not available), try nightly build:\n"
+                        f"  {fix_cmd_nightly}\n\n"
+                        f"Then restart your training job."
+                    )
+                else:
+                    # PyTorch version is 2.8+ but still failing - might be a build issue
+                    fix_cmd = "pip uninstall torch torchvision -y && pip install 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129"
+                    fix_cmd_nightly = "pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu121"
+                    error_detail = (
+                        f"CUDA compatibility error: {error_msg}\n\n"
+                        f"Your GPU ({gpu_name}) requires PyTorch 2.8.0+ with CUDA 12.9+ support.\n"
+                        f"Current PyTorch version: {pytorch_version}\n"
+                        f"The installed PyTorch build may not include kernels for RTX 5090 (sm_120).\n\n"
+                        f"To fix, reinstall PyTorch 2.8.0+ in your pod terminal:\n"
+                        f"  {fix_cmd}\n\n"
+                        f"If that fails, try nightly build:\n"
+                        f"  {fix_cmd_nightly}\n\n"
+                        f"Then restart your training job."
+                    )
+                
                 logger.error("cuda_compatibility_error", 
                            error=error_msg,
-                           suggestion="PyTorch was not compiled for your GPU. For RTX 5090, you need PyTorch 2.8+ with CUDA 12.1+. "
-                                    "Run: pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121")
-                raise RuntimeError(
-                    f"CUDA compatibility error: {error_msg}\n"
-                    f"Your GPU ({gpu_name}) requires PyTorch 2.8+ with CUDA 12.1+ support.\n"
-                    f"Current PyTorch version: {pytorch_version}\n"
-                    f"To fix: pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121"
-                ) from e
+                           gpu_name=gpu_name,
+                           pytorch_version=pytorch_version,
+                           requires_upgrade=requires_upgrade)
+                raise RuntimeError(error_detail) from e
             raise
     else:
         raise RuntimeError("CUDA is not available. Training requires a GPU.")

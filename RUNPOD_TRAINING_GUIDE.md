@@ -59,10 +59,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
-   **For RTX 5090 (PyTorch 2.8+ required)**:
+   **For RTX 5090 (PyTorch 2.8.0+ required - sm_120 support)**:
    ```bash
-   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
+   
+   **Note**: PyTorch 2.8.0+ uses CUDA 12.9 index (cu129), not cu121. If cu129 fails, try nightly builds (see troubleshooting section).
    
    **Important**: 
    - Replace `YOUR_GITHUB_URL` with your actual GitHub repository URL
@@ -120,8 +122,9 @@ git clone https://github.com/isl-org/ZoeDepth.git  # ZoeDepth doesn't have setup
 # 3. Install dependencies
 cd /workspace/image_generation
 
-# If using RTX 5090, upgrade PyTorch first (required):
-# pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# If using RTX 5090, upgrade PyTorch to 2.8.0+ first (required for sm_120 support):
+# pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
+# Note: PyTorch 2.8.0+ uses CUDA 12.9 (cu129), not cu121
 
 # Use installation script to handle dependency conflicts (lama-cleaner)
 chmod +x scripts/install_dependencies.sh
@@ -337,22 +340,36 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
    python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.version.cuda}')"
    ```
 
-2. **Upgrade PyTorch** (if using RTX 5090):
+2. **Upgrade PyTorch to 2.8.0+** (required for RTX 5090 - sm_120 support):
    ```bash
-   pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121
+   # PyTorch 2.8.0+ is available with CUDA 12.9 (not 12.1)
+   pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
    ```
+   
+   **Important**: 
+   - PyTorch 2.5.1 and earlier do NOT support RTX 5090
+   - PyTorch 2.8.0+ requires CUDA 12.9 index (cu129), not cu121
+   - If cu129 doesn't work, try the nightly build (see below)
 
 3. **Verify compatibility**:
    ```bash
    python -c "import torch; x = torch.zeros(1).cuda(); print('CUDA test passed:', x.device)"
    ```
 
-4. **If still failing**, try:
+4. **If cu129 doesn't work**, try nightly builds:
    ```bash
-   # Uninstall and reinstall with specific CUDA version
-   pip uninstall torch torchvision -y
-   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+   # Try nightly build (may have RTX 5090 support)
+   pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu121
    ```
+
+5. **If still failing**, try uninstall and reinstall:
+   ```bash
+   # Uninstall and reinstall with CUDA 12.9
+   pip uninstall torch torchvision -y
+   pip install 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
+   ```
+   
+   **Note**: RTX 5090 (sm_120) requires PyTorch 2.8.0 or higher. Versions 2.5.1, 2.6.x, and 2.7.x do NOT support RTX 5090. PyTorch 2.8.0+ uses CUDA 12.9 index (cu129).
 
 **Important**: After upgrading PyTorch, restart the training job. The server doesn't need to be restarted, but the training process does.
 
@@ -388,9 +405,12 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 3. **Fix RTX 5090 Issue** (If using RTX 5090):
    - If you see PyTorch version warning in logs:
    - Use `sleep infinity` as startup command
-   - Connect terminal and upgrade PyTorch manually:
+   - Connect terminal and upgrade PyTorch to 2.8.0+ manually:
      ```bash
-     pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121
+     # Try CUDA 12.9 index first (PyTorch 2.8.0+)
+     pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
+     # If that fails, try nightly build:
+     # pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu121
      ```
    - Then continue with setup
 
