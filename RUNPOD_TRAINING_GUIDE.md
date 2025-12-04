@@ -440,6 +440,64 @@ export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
 python scripts/setup_model_volume.py --volume-path /models
 ```
 
+### Disk Quota Exceeded
+
+**Error**: `OSError: [Errno 122] Disk quota exceeded`
+
+**Cause**: RunPod volume or container disk is full. Models require ~20-30GB of space.
+
+**Solutions**:
+
+1. **Check Disk Usage**:
+   ```bash
+   df -h
+   du -sh /models
+   ```
+
+2. **Increase Volume Size** (if using persistent volume):
+   - RunPod Dashboard → Volumes → Your Volume
+   - Click **Resize**
+   - Increase to at least 50GB (recommended: 100GB)
+
+3. **Clean Up Unnecessary Files**:
+   ```bash
+   # Remove old model downloads if any
+   rm -rf /models/*.tmp
+   # Clear pip cache
+   pip cache purge
+   # Clear system package cache
+   apt-get clean
+   ```
+
+4. **Use Larger Container Disk**:
+   - When creating pod, increase Container Disk size
+   - Minimum: 50GB, Recommended: 100GB
+
+### Missing loguru Dependency
+
+**Error**: `ModuleNotFoundError: No module named 'loguru'`
+
+**Cause**: lama-cleaner requires loguru but it's not in our requirements.
+
+**Solution**:
+```bash
+pip install loguru
+```
+
+Or the installation script now includes it automatically.
+
+### Missing libGL.so.1 (OpenCV Issue)
+
+**Error**: `ImportError: libGL.so.1: cannot open shared object file`
+
+**Cause**: Missing system graphics libraries required by OpenCV.
+
+**Solution**:
+```bash
+apt-get update
+apt-get install -y libgl1-mesa-glx libglib2.0-0
+```
+
 ### ModuleNotFoundError: No module named 'src'
 
 If you see this error, set PYTHONPATH:

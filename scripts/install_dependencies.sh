@@ -16,7 +16,7 @@ echo ""
 echo "Installing lama-cleaner runtime dependencies (most already installed)..."
 # These are the minimal dependencies needed for ModelManager to work
 # Most are already installed via requirements.txt
-pip install pydantic rich yacs omegaconf safetensors piexif || true
+pip install pydantic rich yacs omegaconf safetensors piexif loguru || true
 
 echo ""
 echo "Verifying installation..."
