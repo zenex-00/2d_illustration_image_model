@@ -655,6 +655,13 @@ async def metrics_endpoint():
 
 # ==================== UI Routes ====================
 
+@app.get("/", response_class=HTMLResponse, tags=["UI"])
+async def root(request: Request):
+    """Root route - redirects to UI"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/ui", status_code=302)
+
+
 @app.get("/ui", response_class=HTMLResponse, tags=["UI"])
 async def ui_home(request: Request):
     """Main UI dashboard"""
