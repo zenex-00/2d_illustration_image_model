@@ -163,8 +163,11 @@ class LoRADataset:
         )
         
         with torch.no_grad():
-            prompt_embeds_2 = self.text_encoder_2(tokens_2.input_ids.to(self.text_encoder_2.device))[0]
-            pooled_prompt_embeds = self.text_encoder_2.get_pooled_output()
+            # CLIPTextModelWithProjection returns (last_hidden_state, text_embeds)
+            # where text_embeds is the pooled output
+            outputs_2 = self.text_encoder_2(tokens_2.input_ids.to(self.text_encoder_2.device))
+            prompt_embeds_2 = outputs_2[0]  # last_hidden_state
+            pooled_prompt_embeds = outputs_2[1]  # text_embeds (pooled output)
         
         # Concatenate embeddings
         prompt_embeds = torch.cat([prompt_embeds, prompt_embeds_2], dim=-1)
