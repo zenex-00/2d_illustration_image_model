@@ -27,8 +27,16 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
 ### 1.2 Create GPU Pod
 
 1. RunPod Dashboard → **Pods** → **New Pod**
-2. **GPU**: Select **RTX 3090** or **A10G** (24GB VRAM)
-3. **Container Image**: `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime`
+2. **GPU**: Select your GPU:
+   - **RTX 3090** or **A10G** (24GB VRAM) - Recommended
+   - **RTX 5090** - Requires PyTorch 2.8+ (see note below)
+   - **RTX 4090** - Compatible
+   - **Avoid**: GPUs with less than 12GB VRAM
+3. **Container Image**: 
+   - For RTX 3090/A10G/RTX 4090: `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime`
+   - For RTX 5090: `pytorch/pytorch:2.8.1-cuda12.7-cudnn9-runtime` or `pytorch/pytorch:2.8.0-cuda12.4-cudnn9-runtime`
+   
+   **Note**: RTX 5090 only supports PyTorch 2.8+. If using RTX 5090, you must use a PyTorch 2.8+ container image.
 4. **Volume Mounts**:
    - Select your volume: `gemini3-models`
    - **Mount Path**: `/models`
@@ -43,15 +51,37 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    ```
 6. **Ports**: Add port `8000` (TCP)
 7. **Startup Command** (replace `YOUR_GITHUB_URL`):
+   
+   **For RTX 3090/A10G/RTX 4090 (PyTorch 2.1)**:
    ```bash
    /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && git clone YOUR_GITHUB_URL image_generation && cd /workspace/image_generation && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
-   **Important**: Replace `YOUR_GITHUB_URL` with your actual GitHub repository URL (e.g., `https://github.com/username/repo-name`)
+   **For RTX 5090 (PyTorch 2.8+ required)**:
+   ```bash
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && git clone YOUR_GITHUB_URL image_generation && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu124 && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   ```
+   
+   **Important**: 
+   - Replace `YOUR_GITHUB_URL` with your actual GitHub repository URL
+   - RTX 5090 requires PyTorch 2.8+, so the RTX 5090 command upgrades PyTorch first
 8. **Pod Name**: `gemini3-training`
 9. Click **Deploy**
 
 **Wait 5-10 minutes** for pod to start and setup to complete.
+
+**Alternative: If Startup Command Keeps Failing**
+
+If you encounter container startup errors, use this simpler approach:
+
+1. **Startup Command** (use this instead):
+   ```bash
+   sleep infinity
+   ```
+
+2. After pod starts, connect via terminal and run setup manually (see Part 2.3 below).
+
+This avoids complex startup commands that can cause container errors.
 
 ---
 
@@ -70,7 +100,43 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
 
 **Expected**: See directories, `CUDA: True`, model folders exist.
 
-### 2.2 Get Pod URL
+### 2.2 Manual Setup (If Startup Command Failed)
+
+If you used `sleep infinity` as startup command or automated setup failed, run setup manually:
+
+```bash
+# 1. Install git (if needed)
+apt-get update && apt-get install -y git
+
+# 2. Clone repository (replace YOUR_GITHUB_URL)
+cd /workspace
+git clone YOUR_GITHUB_URL image_generation
+
+# 3. Install dependencies
+cd /workspace/image_generation
+
+# If using RTX 5090, upgrade PyTorch first (required):
+# pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu124
+
+pip install -r requirements.txt
+
+# 4. Set PYTHONPATH
+export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
+
+# 5. Setup models (takes 30-60 minutes)
+python scripts/setup_model_volume.py --volume-path /models
+
+# 6. Start server
+uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+```
+
+**Note**: Keep terminal open - server must keep running. Or run in background:
+```bash
+nohup uvicorn src.api.server:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+tail -f server.log  # View logs
+```
+
+### 2.3 Get Pod URL
 
 1. In pod page, find **HTTP Service** URL
 2. Format: `https://xxxxx-8000.proxy.runpod.net` or `http://xxx.xxx.xxx.xxx:8000`
@@ -219,6 +285,73 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 ---
 
 ## Troubleshooting
+
+### RTX 5090 GPU Compatibility
+
+**Error**: `Warning: RTX 5090s only support Pytorch 2.8 and above`
+
+**Cause**: RTX 5090 requires PyTorch 2.8+, but container image has PyTorch 2.1.0.
+
+**Solution Options**:
+
+1. **Use PyTorch 2.8+ Container Image** (Best for RTX 5090):
+   - Change Container Image to: `pytorch/pytorch:2.8.1-cuda12.7-cudnn9-runtime`
+   - Use standard startup command (PyTorch 2.8+ already installed)
+   
+2. **Upgrade PyTorch in Existing Pod** (Quick Fix):
+   - If pod is already running with 2.1 image:
+   ```bash
+   pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu124
+   pip install -r requirements.txt  # Reinstall to ensure compatibility
+   ```
+   - Then continue with setup
+
+3. **Use RTX 5090 Startup Command**:
+   - The RTX 5090 startup command (above) automatically upgrades PyTorch
+   - Use that command if you selected RTX 5090 GPU
+
+4. **Switch to Compatible GPU** (Alternative):
+   - Use RTX 3090, A10G, or RTX 4090 instead
+   - These work with PyTorch 2.1.0 image
+   - No PyTorch upgrade needed
+
+**Note**: If you see the RTX 5090 warning, you MUST upgrade PyTorch before training will work.
+
+### RunPod Container Startup Errors
+
+**Error**: `cannot join network namespace of a non running container` or `failed to create shim task`
+
+**Cause**: RunPod infrastructure issue - container state is corrupted or stuck.
+
+**Solutions** (try in order):
+
+1. **Delete and Recreate Pod** (Most Reliable):
+   - Dashboard → Pods → Find your pod
+   - Click **Delete** or **Terminate**
+   - Wait for deletion to complete
+   - Create a new pod with same settings
+   - This clears all container state
+
+2. **Try Different GPU/Region**:
+   - Sometimes specific GPU types or regions have issues
+   - Try a different GPU (e.g., RTX 3090 instead of A10G)
+   - Try a different region/data center
+
+3. **Use Simpler Startup Command** (Temporary):
+   - Use `sleep infinity` as startup command
+   - Connect via terminal after pod starts
+   - Run setup commands manually (see Part 2)
+
+4. **Check RunPod Status**:
+   - Visit: https://status.runpod.io
+   - Check if RunPod is experiencing issues
+   - Wait if there's a known outage
+
+5. **Contact RunPod Support**:
+   - If errors persist, contact RunPod support via dashboard
+   - Provide error messages and pod ID
+
+**Prevention**: If pod keeps failing, use manual setup approach (startup: `sleep infinity`) instead of automated startup command.
 
 ### Server Not Running
 
