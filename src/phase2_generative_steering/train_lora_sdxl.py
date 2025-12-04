@@ -151,7 +151,10 @@ class LoRADataset:
         
         # Encode with text encoder 1
         with torch.no_grad():
-            prompt_embeds = self.text_encoder(tokens.input_ids.to(self.text_encoder.device))[0]
+            outputs_1 = self.text_encoder(tokens.input_ids.to(self.text_encoder.device))
+            # CLIPTextModel returns BaseModelOutputWithPooling
+            # outputs[0] is last_hidden_state: [batch, seq_len, hidden_size]
+            prompt_embeds = outputs_1[0]  # Shape: [1, 77, 768]
         
         # Encode with text encoder 2
         tokens_2 = self.tokenizer(
@@ -166,10 +169,24 @@ class LoRADataset:
             # CLIPTextModelWithProjection returns (last_hidden_state, text_embeds)
             # where text_embeds is the pooled output
             outputs_2 = self.text_encoder_2(tokens_2.input_ids.to(self.text_encoder_2.device))
-            prompt_embeds_2 = outputs_2[0]  # last_hidden_state
-            pooled_prompt_embeds = outputs_2[1]  # text_embeds (pooled output)
+            prompt_embeds_2 = outputs_2[0]  # last_hidden_state: [1, 77, 1280]
+            pooled_prompt_embeds = outputs_2[1]  # text_embeds (pooled output): [1, 1280]
         
-        # Concatenate embeddings
+        # Ensure both embeddings have the same shape [batch, seq_len, hidden]
+        # Both should be 3D tensors: [1, 77, hidden_size]
+        if len(prompt_embeds.shape) != len(prompt_embeds_2.shape):
+            # If one is missing batch dimension, add it
+            if len(prompt_embeds.shape) == 2:
+                prompt_embeds = prompt_embeds.unsqueeze(0)
+            if len(prompt_embeds_2.shape) == 2:
+                prompt_embeds_2 = prompt_embeds_2.unsqueeze(0)
+        
+        # Ensure same device
+        if prompt_embeds.device != prompt_embeds_2.device:
+            prompt_embeds_2 = prompt_embeds_2.to(prompt_embeds.device)
+        
+        # Concatenate embeddings along the hidden dimension (dim=-1)
+        # Result: [1, 77, 768+1280] = [1, 77, 2048]
         prompt_embeds = torch.cat([prompt_embeds, prompt_embeds_2], dim=-1)
         
         return prompt_embeds, pooled_prompt_embeds
