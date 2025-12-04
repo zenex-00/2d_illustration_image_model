@@ -56,12 +56,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 3090/A10G/RTX 4090 (PyTorch 2.1)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation && git clone YOUR_GITHUB_URL image_generation && cd /workspace && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **For RTX 5090 (PyTorch 2.8+ required)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation && git clone YOUR_GITHUB_URL image_generation && cd /workspace && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **Important**: 
@@ -112,7 +112,7 @@ apt-get update && apt-get install -y git
 
 # 2. Clone repositories
 cd /workspace
-rm -rf image_generation  # Remove if exists from previous attempt
+rm -rf image_generation ZoeDepth  # Remove if exists from previous attempt
 git clone YOUR_GITHUB_URL image_generation
 git clone https://github.com/isl-org/ZoeDepth.git  # ZoeDepth doesn't have setup.py, add to PYTHONPATH
 
@@ -460,18 +460,19 @@ Then retry your command. To make it permanent for the session, add to your start
 
 ### Git Clone Fails - "destination path already exists"
 
-**Error**: `fatal: destination path 'image_generation' already exists and is not an empty directory`
+**Error**: `fatal: destination path 'image_generation' already exists` or `fatal: destination path 'ZoeDepth' already exists`
 
 **Cause**: Previous startup attempt created the directory but failed partway through.
 
 **Solution**:
 ```bash
 cd /workspace
-rm -rf image_generation
+rm -rf image_generation ZoeDepth
 git clone YOUR_GITHUB_URL image_generation
+git clone https://github.com/isl-org/ZoeDepth.git
 ```
 
-Or update startup command to include `rm -rf image_generation &&` before git clone.
+The updated startup commands now include `rm -rf image_generation ZoeDepth &&` before git clone to prevent this issue.
 
 ### Package Installation Issues
 
