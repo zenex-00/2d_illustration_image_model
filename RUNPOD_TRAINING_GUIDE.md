@@ -56,12 +56,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 3090/A10G/RTX 4090 (PyTorch 2.1)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git libgl1-mesa-glx libglib2.0-0 && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **For RTX 5090 (PyTorch 2.8+ required)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git libgl1-mesa-glx libglib2.0-0 && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **Important**: 
@@ -107,8 +107,8 @@ This avoids complex startup commands that can cause container errors.
 If you used `sleep infinity` as startup command or automated setup failed, run setup manually:
 
 ```bash
-# 1. Install git (if needed)
-apt-get update && apt-get install -y git
+# 1. Install git and system libraries (required for OpenCV)
+apt-get update && apt-get install -y git libgl1-mesa-glx libglib2.0-0
 
 # 2. Clone repositories
 cd /workspace
@@ -488,15 +488,24 @@ Or the installation script now includes it automatically.
 
 ### Missing libGL.so.1 (OpenCV Issue)
 
-**Error**: `ImportError: libGL.so.1: cannot open shared object file`
+**Error**: `ImportError: libGL.so.1: cannot open shared object file: No such file or directory`
 
-**Cause**: Missing system graphics libraries required by OpenCV.
+**Cause**: Missing system graphics libraries required by OpenCV. This prevents the server from starting and blocks OpenCV imports.
 
 **Solution**:
 ```bash
 apt-get update
 apt-get install -y libgl1-mesa-glx libglib2.0-0
 ```
+
+**Then restart server**:
+```bash
+cd /workspace/image_generation
+export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
+uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+```
+
+**Note**: The installation script and startup commands now include this automatically. If you're using the manual setup, install these libraries first.
 
 ### ModuleNotFoundError: No module named 'src'
 
@@ -517,7 +526,9 @@ Then retry your command. To make it permanent for the session, add to your start
 5. Restart server:
    ```bash
    cd /workspace/image_generation
-   export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
+   # Install system libraries if missing
+   apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0
+   export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
    uvicorn src.api.server:app --host 0.0.0.0 --port 8000
    ```
 
