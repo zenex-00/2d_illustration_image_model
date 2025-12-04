@@ -61,10 +61,10 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 5090 (PyTorch 2.8.0+ required - sm_120 support)**:
    ```bash
-   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
-   **Note**: PyTorch 2.8.0+ uses CUDA 12.9 index (cu129), not cu121. If cu129 fails, try nightly builds (see troubleshooting section).
+   **Note**: RTX 5090 requires PyTorch 2.8.0+ with CUDA 12.8+ support. CUDA 12.8 nightly builds (cu128) are confirmed to work with RTX 5090. If nightly fails, try cu129 stable builds (see troubleshooting section).
    
    **Important**: 
    - Replace `YOUR_GITHUB_URL` with your actual GitHub repository URL
@@ -123,8 +123,8 @@ git clone https://github.com/isl-org/ZoeDepth.git  # ZoeDepth doesn't have setup
 cd /workspace/image_generation
 
 # If using RTX 5090, upgrade PyTorch to 2.8.0+ first (required for sm_120 support):
-# pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
-# Note: PyTorch 2.8.0+ uses CUDA 12.9 (cu129), not cu121
+# pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
+# Note: CUDA 12.8 nightly builds (cu128) are confirmed to work with RTX 5090
 
 # Use installation script to handle dependency conflicts (lama-cleaner)
 chmod +x scripts/install_dependencies.sh
@@ -342,34 +342,34 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 
 2. **Upgrade PyTorch to 2.8.0+** (required for RTX 5090 - sm_120 support):
    ```bash
-   # PyTorch 2.8.0+ is available with CUDA 12.9 (not 12.1)
-   pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
+   # CUDA 12.8 nightly builds are confirmed to work with RTX 5090 (recommended)
+   pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
    ```
    
    **Important**: 
    - PyTorch 2.5.1 and earlier do NOT support RTX 5090
-   - PyTorch 2.8.0+ requires CUDA 12.9 index (cu129), not cu121
-   - If cu129 doesn't work, try the nightly build (see below)
+   - CUDA 12.8 nightly builds (cu128) are confirmed to support RTX 5090
+   - If nightly doesn't work, try CUDA 12.9 stable build (see below)
 
 3. **Verify compatibility**:
    ```bash
    python -c "import torch; x = torch.zeros(1).cuda(); print('CUDA test passed:', x.device)"
    ```
 
-4. **If cu129 doesn't work**, try nightly builds:
+4. **If cu128 nightly doesn't work**, try CUDA 12.9 stable build:
    ```bash
-   # Try nightly build (may have RTX 5090 support)
-   pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu121
+   # Fallback: Try CUDA 12.9 stable build
+   pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
    ```
 
 5. **If still failing**, try uninstall and reinstall:
    ```bash
-   # Uninstall and reinstall with CUDA 12.9
+   # Uninstall and reinstall with CUDA 12.8 nightly (recommended)
    pip uninstall torch torchvision -y
-   pip install 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
+   pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
    ```
    
-   **Note**: RTX 5090 (sm_120) requires PyTorch 2.8.0 or higher. Versions 2.5.1, 2.6.x, and 2.7.x do NOT support RTX 5090. PyTorch 2.8.0+ uses CUDA 12.9 index (cu129).
+   **Note**: RTX 5090 (sm_120) requires PyTorch 2.8.0 or higher. Versions 2.5.1, 2.6.x, and 2.7.x do NOT support RTX 5090. CUDA 12.8 nightly builds (cu128) are confirmed to work with RTX 5090.
 
 **Important**: After upgrading PyTorch, restart the training job. The server doesn't need to be restarted, but the training process does.
 
@@ -407,10 +407,10 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
    - Use `sleep infinity` as startup command
    - Connect terminal and upgrade PyTorch to 2.8.0+ manually:
      ```bash
-     # Try CUDA 12.9 index first (PyTorch 2.8.0+)
-     pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
-     # If that fails, try nightly build:
-     # pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu121
+     # CUDA 12.8 nightly builds are confirmed to work with RTX 5090 (recommended)
+     pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
+     # If that fails, try CUDA 12.9 stable build:
+     # pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
      ```
    - Then continue with setup
 
