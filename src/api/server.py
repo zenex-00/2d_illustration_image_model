@@ -752,9 +752,29 @@ async def ui_training_submit(
         targets_dir.mkdir(parents=True, exist_ok=True)
         
         for i, (input_file, target_file) in enumerate(zip(input_files, target_files)):
-            # Validate images
-            input_img = validate_uploaded_image(input_file)
-            target_img = validate_uploaded_image(target_file)
+            # Validate images - allow larger dimensions for training (max 16384px)
+            # Training will resize to 1024x1024 anyway, so we allow large uploads
+            input_img = validate_uploaded_image(input_file, max_dimension=16384)
+            target_img = validate_uploaded_image(target_file, max_dimension=16384)
+            
+            # Resize very large images to reduce storage/processing time
+            # Keep aspect ratio, max dimension 2048px for storage efficiency
+            MAX_TRAINING_DIMENSION = 2048
+            input_max_dim = max(input_img.size)
+            if input_max_dim > MAX_TRAINING_DIMENSION:
+                original_size = input_img.size
+                scale = MAX_TRAINING_DIMENSION / input_max_dim
+                new_size = (int(input_img.size[0] * scale), int(input_img.size[1] * scale))
+                input_img = input_img.resize(new_size, Image.Resampling.LANCZOS)
+                logger.info("resized_input_image", original_size=original_size, new_size=new_size)
+            
+            target_max_dim = max(target_img.size)
+            if target_max_dim > MAX_TRAINING_DIMENSION:
+                original_size = target_img.size
+                scale = MAX_TRAINING_DIMENSION / target_max_dim
+                new_size = (int(target_img.size[0] * scale), int(target_img.size[1] * scale))
+                target_img = target_img.resize(new_size, Image.Resampling.LANCZOS)
+                logger.info("resized_target_image", original_size=original_size, new_size=new_size)
             
             # Convert RGBA to RGB if needed (for JPEG compatibility), otherwise keep original format
             # Always save training images as PNG to preserve quality and support transparency
