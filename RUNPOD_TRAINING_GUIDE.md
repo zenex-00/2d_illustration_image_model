@@ -56,12 +56,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 3090/A10G/RTX 4090 (PyTorch 2.1)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation && git clone YOUR_GITHUB_URL image_generation && cd /workspace/image_generation && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation && git clone YOUR_GITHUB_URL image_generation && cd /workspace && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **For RTX 5090 (PyTorch 2.8+ required)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation && git clone YOUR_GITHUB_URL image_generation && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation && git clone YOUR_GITHUB_URL image_generation && cd /workspace && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **Important**: 
@@ -110,10 +110,11 @@ If you used `sleep infinity` as startup command or automated setup failed, run s
 # 1. Install git (if needed)
 apt-get update && apt-get install -y git
 
-# 2. Clone repository (replace YOUR_GITHUB_URL)
+# 2. Clone repositories
 cd /workspace
 rm -rf image_generation  # Remove if exists from previous attempt
 git clone YOUR_GITHUB_URL image_generation
+git clone https://github.com/isl-org/ZoeDepth.git  # ZoeDepth doesn't have setup.py, add to PYTHONPATH
 
 # 3. Install dependencies
 cd /workspace/image_generation
@@ -123,8 +124,8 @@ cd /workspace/image_generation
 
 pip install -r requirements.txt
 
-# 4. Set PYTHONPATH
-export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
+# 4. Set PYTHONPATH (include both image_generation and ZoeDepth)
+export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
 
 # 5. Setup models (takes 30-60 minutes)
 python scripts/setup_model_volume.py --volume-path /models
@@ -479,16 +480,15 @@ Or update startup command to include `rm -rf image_generation &&` before git clo
 **Cause**: ZoeDepth is not available on PyPI - it must be installed from GitHub.
 
 **Solution**: 
-- The `requirements.txt` has been updated to install from GitHub: `git+https://github.com/isl-org/ZoeDepth.git`
-- If you have an old version of requirements.txt, update it or manually install:
+- ZoeDepth doesn't have `setup.py` or `pyproject.toml`, so it can't be installed via pip
+- It must be cloned and added to PYTHONPATH instead:
   ```bash
-  pip install git+https://github.com/isl-org/ZoeDepth.git
+  cd /workspace
+  git clone https://github.com/isl-org/ZoeDepth.git
+  export PYTHONPATH=/workspace/ZoeDepth:$PYTHONPATH
   ```
-  
-  **Note**: We use the main branch (no specific tag) as the repository doesn't have version tags. If you encounter issues, you can try:
-  ```bash
-  pip install git+https://github.com/isl-org/ZoeDepth.git@main
-  ```
+- The startup commands in the guide now include cloning ZoeDepth automatically
+- For manual setup, clone ZoeDepth and add `/workspace/ZoeDepth` to PYTHONPATH
 
 If `controlnet-aux` installation fails:
 - The version has been fixed in requirements.txt (>=0.0.10)

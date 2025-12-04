@@ -24,8 +24,8 @@ controlnet-aux>=0.0.10
 rembg>=2.0.50
 
 # Depth Estimation
-# Note: ZoeDepth must be installed from GitHub, not PyPI
-git+https://github.com/isl-org/ZoeDepth.git
+# Note: ZoeDepth is installed manually via git clone (see setup scripts)
+# It doesn't have setup.py, so we add it to PYTHONPATH instead
 
 # Upscaling
 basicsr>=1.4.2
