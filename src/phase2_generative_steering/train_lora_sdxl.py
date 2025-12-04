@@ -256,6 +256,36 @@ def train_lora(
     logger.info("lora_training_start", base_model=base_model, rank=rank, alpha=alpha)
     logger.info(f"peft_version: {peft.__version__}")
     
+    # Verify CUDA compatibility
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        gpu_name = torch.cuda.get_device_name(0)
+        cuda_version = torch.version.cuda
+        pytorch_version = torch.__version__
+        logger.info("cuda_info", gpu_name=gpu_name, cuda_version=cuda_version, pytorch_version=pytorch_version)
+        
+        # Test CUDA with a simple operation
+        try:
+            test_tensor = torch.zeros(1, device=device)
+            _ = test_tensor + 1
+            logger.info("cuda_test_passed")
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "no kernel image" in error_msg.lower() or "compute capability" in error_msg.lower():
+                logger.error("cuda_compatibility_error", 
+                           error=error_msg,
+                           suggestion="PyTorch was not compiled for your GPU. For RTX 5090, you need PyTorch 2.8+ with CUDA 12.1+. "
+                                    "Run: pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121")
+                raise RuntimeError(
+                    f"CUDA compatibility error: {error_msg}\n"
+                    f"Your GPU ({gpu_name}) requires PyTorch 2.8+ with CUDA 12.1+ support.\n"
+                    f"Current PyTorch version: {pytorch_version}\n"
+                    f"To fix: pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121"
+                ) from e
+            raise
+    else:
+        raise RuntimeError("CUDA is not available. Training requires a GPU.")
+    
     # Initialize accelerator
     accelerator = Accelerator(
         gradient_accumulation_steps=1,

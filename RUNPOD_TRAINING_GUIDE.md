@@ -327,6 +327,35 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 
 **Note**: If you see the RTX 5090 warning, you MUST upgrade PyTorch before training will work.
 
+**Error**: `CUDA error: no kernel image is available for execution on the device`
+
+**Cause**: PyTorch was not compiled for your GPU's compute capability. RTX 5090 requires PyTorch 2.8+ with CUDA 12.1+ support.
+
+**Solution**:
+1. **Check current PyTorch version**:
+   ```bash
+   python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.version.cuda}')"
+   ```
+
+2. **Upgrade PyTorch** (if using RTX 5090):
+   ```bash
+   pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121
+   ```
+
+3. **Verify compatibility**:
+   ```bash
+   python -c "import torch; x = torch.zeros(1).cuda(); print('CUDA test passed:', x.device)"
+   ```
+
+4. **If still failing**, try:
+   ```bash
+   # Uninstall and reinstall with specific CUDA version
+   pip uninstall torch torchvision -y
+   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+   ```
+
+**Important**: After upgrading PyTorch, restart the training job. The server doesn't need to be restarted, but the training process does.
+
 ### Container Stuck in Restart Loop
 
 **Symptoms**: Container shows "start container" repeatedly, keeps restarting, never fully starts.
