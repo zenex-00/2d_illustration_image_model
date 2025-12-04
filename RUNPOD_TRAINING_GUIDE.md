@@ -491,6 +491,18 @@ The updated startup commands now include `rm -rf image_generation ZoeDepth &&` b
 - The startup commands in the guide now include cloning ZoeDepth automatically
 - For manual setup, clone ZoeDepth and add `/workspace/ZoeDepth` to PYTHONPATH
 
+**Error**: `ERROR: Could not find a version that satisfies the requirement colorspacious>=2.0.0`
+
+**Cause**: colorspacious version 2.0.0 doesn't exist - latest is 1.1.2.
+
+**Solution**: 
+- The `requirements.txt` has been updated to use `colorspacious>=1.1.2`
+- If you have an old version, update it manually:
+  ```bash
+  sed -i 's/colorspacious>=2.0.0/colorspacious>=1.1.2/' requirements.txt
+  pip install -r requirements.txt
+  ```
+
 If `controlnet-aux` installation fails:
 - The version has been fixed in requirements.txt (>=0.0.10)
 - If you have an old requirements.txt, update it or run:
