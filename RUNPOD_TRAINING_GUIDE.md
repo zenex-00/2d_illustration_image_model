@@ -56,12 +56,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 3090/A10G/RTX 4090 (PyTorch 2.1)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **For RTX 5090 (PyTorch 2.8+ required)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **Important**: 
@@ -122,7 +122,14 @@ cd /workspace/image_generation
 # If using RTX 5090, upgrade PyTorch first (required):
 # pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
-pip install -r requirements.txt
+# Use installation script to handle dependency conflicts (lama-cleaner)
+chmod +x scripts/install_dependencies.sh
+bash scripts/install_dependencies.sh
+
+# Or install manually if script doesn't work:
+# pip install -r requirements.txt
+# pip install --no-deps lama-cleaner>=1.2.0
+# pip install pydantic rich yacs omegaconf safetensors piexif || true
 
 # 4. Set PYTHONPATH (include both image_generation and ZoeDepth)
 export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
@@ -490,6 +497,21 @@ The updated startup commands now include `rm -rf image_generation ZoeDepth &&` b
   ```
 - The startup commands in the guide now include cloning ZoeDepth automatically
 - For manual setup, clone ZoeDepth and add `/workspace/ZoeDepth` to PYTHONPATH
+
+**Error**: `ERROR: ResolutionImpossible: Cannot install -r requirements.txt (line 18) and diffusers>=0.30.0 because these package versions have conflicting dependencies`
+
+**Cause**: lama-cleaner requires `diffusers==0.16.1` but our code needs `diffusers>=0.30.0` for SDXL ControlNet support.
+
+**Solution**: 
+- Use the provided installation script: `bash scripts/install_dependencies.sh`
+- Or install manually:
+  ```bash
+  pip install -r requirements.txt
+  pip install --no-deps lama-cleaner>=1.2.0
+  pip install pydantic rich yacs omegaconf safetensors piexif || true
+  ```
+- The `--no-deps` flag installs lama-cleaner without its conflicting dependencies
+- Our code uses newer diffusers version which works fine with lama-cleaner's ModelManager
 
 **Error**: `ERROR: Could not find a version that satisfies the requirement colorspacious>=2.0.0`
 
