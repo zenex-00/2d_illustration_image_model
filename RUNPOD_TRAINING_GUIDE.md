@@ -33,10 +33,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    - **RTX 4090** - Compatible
    - **Avoid**: GPUs with less than 12GB VRAM
 3. **Container Image**: 
-   - For RTX 3090/A10G/RTX 4090: `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime`
-   - For RTX 5090: `pytorch/pytorch:2.8.1-cuda12.7-cudnn9-runtime` or `pytorch/pytorch:2.8.0-cuda12.4-cudnn9-runtime`
+   - **For RTX 3090/A10G/RTX 4090**: `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime` (Recommended)
+   - **For RTX 5090**: 
+     - **Recommended**: Use `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime` and upgrade PyTorch in startup command (see below)
+     - **Alternative**: Try `pytorch/pytorch:2.9.1-cuda12.9-cudnn9-runtime` (newer, verify availability)
    
-   **Note**: RTX 5090 only supports PyTorch 2.8+. If using RTX 5090, you must use a PyTorch 2.8+ container image.
+   **Note**: RTX 5090 requires PyTorch 2.8+. Most reliable: Use 2.1 image + upgrade PyTorch (Recommended approach).
 4. **Volume Mounts**:
    - Select your volume: `gemini3-models`
    - **Mount Path**: `/models`
@@ -54,12 +56,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 3090/A10G/RTX 4090 (PyTorch 2.1)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && git clone YOUR_GITHUB_URL image_generation && cd /workspace/image_generation && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation && git clone YOUR_GITHUB_URL image_generation && cd /workspace/image_generation && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **For RTX 5090 (PyTorch 2.8+ required)**:
    ```bash
-   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && git clone YOUR_GITHUB_URL image_generation && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu124 && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "apt-get update && apt-get install -y git && cd /workspace && rm -rf image_generation && git clone YOUR_GITHUB_URL image_generation && cd /workspace/image_generation && pip install -q --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121 && pip install -q -r requirements.txt && export PYTHONPATH=/workspace/image_generation:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **Important**: 
@@ -110,13 +112,14 @@ apt-get update && apt-get install -y git
 
 # 2. Clone repository (replace YOUR_GITHUB_URL)
 cd /workspace
+rm -rf image_generation  # Remove if exists from previous attempt
 git clone YOUR_GITHUB_URL image_generation
 
 # 3. Install dependencies
 cd /workspace/image_generation
 
 # If using RTX 5090, upgrade PyTorch first (required):
-# pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
 pip install -r requirements.txt
 
@@ -294,28 +297,66 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 
 **Solution Options**:
 
-1. **Use PyTorch 2.8+ Container Image** (Best for RTX 5090):
-   - Change Container Image to: `pytorch/pytorch:2.8.1-cuda12.7-cudnn9-runtime`
-   - Use standard startup command (PyTorch 2.8+ already installed)
-   
-2. **Upgrade PyTorch in Existing Pod** (Quick Fix):
-   - If pod is already running with 2.1 image:
+1. **Upgrade PyTorch in Pod** (Recommended for RTX 5090):
+   - Use PyTorch 2.1 image: `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime`
+   - Use the RTX 5090 startup command (above) which auto-upgrades PyTorch
+   - Or manually upgrade if pod is already running:
    ```bash
-   pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu124
+   pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121
    pip install -r requirements.txt  # Reinstall to ensure compatibility
    ```
-   - Then continue with setup
-
-3. **Use RTX 5090 Startup Command**:
-   - The RTX 5090 startup command (above) automatically upgrades PyTorch
-   - Use that command if you selected RTX 5090 GPU
-
-4. **Switch to Compatible GPU** (Alternative):
+   
+2. **Try PyTorch 2.9 Image** (If Available):
+   - Try: `pytorch/pytorch:2.9.1-cuda12.9-cudnn9-runtime`
+   - Or check Docker Hub for latest 2.8+ tags: https://hub.docker.com/r/pytorch/pytorch/tags
+   - Note: Many 2.8 image tags don't exist - if image pull fails, use Option 1 instead
+   
+3. **Switch to Compatible GPU** (Alternative):
    - Use RTX 3090, A10G, or RTX 4090 instead
    - These work with PyTorch 2.1.0 image
    - No PyTorch upgrade needed
 
 **Note**: If you see the RTX 5090 warning, you MUST upgrade PyTorch before training will work.
+
+### Container Stuck in Restart Loop
+
+**Symptoms**: Container shows "start container" repeatedly, keeps restarting, never fully starts.
+
+**Cause**: Startup command is failing immediately, causing container to crash and restart in a loop.
+
+**Solutions**:
+
+1. **Check Pod Logs** (First Step):
+   - In RunPod Dashboard → Your Pod
+   - Click **Logs** tab or **View Logs**
+   - Look for error messages that show why container is failing
+   - Common causes:
+     - RTX 5090 PyTorch version warning (if using 2.1 image)
+     - Startup command syntax error
+     - Missing dependencies
+     - Git clone failure
+
+2. **Use Simple Startup Command** (Break the Loop):
+   - Stop the pod: Dashboard → Pod → **Stop**
+   - Wait for it to stop
+   - Edit pod settings or create new pod
+   - Change **Startup Command** to:
+     ```bash
+     sleep infinity
+     ```
+   - Start pod
+   - Connect via terminal and set up manually (see Part 2.2)
+
+3. **Fix RTX 5090 Issue** (If using RTX 5090):
+   - If you see PyTorch version warning in logs:
+   - Use `sleep infinity` as startup command
+   - Connect terminal and upgrade PyTorch manually:
+     ```bash
+     pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121
+     ```
+   - Then continue with setup
+
+**Prevention**: Test with `sleep infinity` startup command first, then manually run setup to see any errors clearly.
 
 ### RunPod Container Startup Errors
 
@@ -416,7 +457,33 @@ Then retry your command. To make it permanent for the session, add to your start
 
 **Note**: Data in `/workspace` is lost on restart, but `/models` volume persists.
 
+### Git Clone Fails - "destination path already exists"
+
+**Error**: `fatal: destination path 'image_generation' already exists and is not an empty directory`
+
+**Cause**: Previous startup attempt created the directory but failed partway through.
+
+**Solution**:
+```bash
+cd /workspace
+rm -rf image_generation
+git clone YOUR_GITHUB_URL image_generation
+```
+
+Or update startup command to include `rm -rf image_generation &&` before git clone.
+
 ### Package Installation Issues
+
+**Error**: `ERROR: Could not find a version that satisfies the requirement zoedepth>=0.1.0`
+
+**Cause**: ZoeDepth is not available on PyPI - it must be installed from GitHub.
+
+**Solution**: 
+- The `requirements.txt` has been updated to install from GitHub: `git+https://github.com/isl-org/ZoeDepth.git@v1.1.1`
+- If you have an old version of requirements.txt, update it or manually install:
+  ```bash
+  pip install git+https://github.com/isl-org/ZoeDepth.git@v1.1.1
+  ```
 
 If `controlnet-aux` installation fails:
 - The version has been fixed in requirements.txt (>=0.0.10)
