@@ -1,0 +1,192 @@
+{% extends "layout.html" %}
+
+{% block title %}Inference - Gemini 3 Pro{% endblock %}
+
+{% block content %}
+<h2>Image Processing (Inference)</h2>
+
+<form method="post" action="/ui/inference" enctype="multipart/form-data" id="inference-form">
+    <div class="form-group">
+        <label>Input Image</label>
+        <input type="file" 
+               name="file" 
+               accept="image/*" 
+               required
+               aria-label="Upload vehicle photo to process"
+               aria-describedby="file-help">
+        <small id="file-help">Upload a vehicle photo to process (Max 50MB)</small>
+    </div>
+    
+    {% if trained_models %}
+    <div class="form-group">
+        <label>LoRA Checkpoint (Optional)</label>
+        <select name="lora_checkpoint">
+            <option value="">Use default model</option>
+            {% for model in trained_models %}
+            <option value="{{ model.path }}">{{ model.name }}</option>
+            {% endfor %}
+        </select>
+        <small>Select a trained LoRA checkpoint to use</small>
+    </div>
+    {% endif %}
+    
+    <h3>Preprocessing Options</h3>
+    
+    <div class="card">
+        <h4>Phase I: Semantic Sanitization</h4>
+        <div class="toggle-group">
+            <label>Enable Phase I</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase1_enabled" checked>
+                <span class="slider"></span>
+            </label>
+            <small>Remove prohibited elements (logos, text, etc.)</small>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h4>Phase II: Generative Steering</h4>
+        <div class="toggle-group">
+            <label>Enable Phase II</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase2_enabled" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-group">
+            <label>Background Removal</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase2_background_removal" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-group">
+            <label>Depth Estimation</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase2_depth_estimation" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-group">
+            <label>Edge Detection</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase2_edge_detection" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h4>Phase III: Chromatic Enforcement</h4>
+        <div class="toggle-group">
+            <label>Enable Phase III</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase3_enabled" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-group">
+            <label>Upscaler</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase3_upscaler" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-group">
+            <label>Color Quantization</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase3_quantization" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-group">
+            <label>Noise Removal</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase3_noise_removal" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h4>Phase IV: Vector Reconstruction</h4>
+        <div class="toggle-group">
+            <label>Enable Phase IV</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase4_enabled" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="toggle-group">
+            <label>Centerline Tracing</label>
+            <label class="toggle-switch">
+                <input type="checkbox" name="phase4_centerline" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+    
+    <div class="form-group">
+        <label>Custom Palette (Optional)</label>
+        <input type="text" 
+               name="palette_hex_list" 
+               placeholder="Comma-separated list of 15 hex colors"
+               pattern="^#([A-Fa-f0-9]{6},){14}#[A-Fa-f0-9]{6}$"
+               title="Enter 15 hex colors separated by commas (e.g., #FF0000,#00FF00,...)">
+        <small>Example: #FF0000,#00FF00,#0000FF,... (15 colors total)</small>
+    </div>
+    
+    <details class="card">
+        <summary><h4>Advanced Options</h4></summary>
+        <div class="form-group">
+            <label>Prompt Override (Optional)</label>
+            <textarea name="prompt_override" rows="3" placeholder="Override the default prompt for Phase II generation"></textarea>
+            <small>Custom prompt for image generation (leave empty for default)</small>
+        </div>
+        
+        <div class="grid">
+            <div class="form-group">
+                <label>ControlNet Depth Weight</label>
+                <input type="number" name="depth_weight" value="0.6" step="0.1" min="0.0" max="1.0">
+                <small>Weight for depth ControlNet (0.0 - 1.0)</small>
+            </div>
+            
+            <div class="form-group">
+                <label>ControlNet Canny Weight</label>
+                <input type="number" name="canny_weight" value="0.4" step="0.1" min="0.0" max="1.0">
+                <small>Weight for canny edge ControlNet (0.0 - 1.0)</small>
+            </div>
+        </div>
+    </details>
+    
+    <button type="submit" 
+            id="submit-btn"
+            aria-label="Process image through pipeline">Process Image</button>
+</form>
+
+<script>
+document.getElementById('inference-form').addEventListener('submit', function(e) {
+    const submitBtn = document.getElementById('submit-btn');
+    const originalText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Processing...';
+    
+    // Re-enable button if form submission fails (timeout fallback)
+    const form = this;
+    setTimeout(function() {
+        // If still disabled after 5 seconds and form hasn't submitted, re-enable
+        if (submitBtn.disabled && !form.dataset.submitted) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+            alert('Form submission timed out. Please try again.');
+        }
+    }, 5000);
+    
+    // Mark form as submitted on successful navigation
+    form.addEventListener('submit', function() {
+        form.dataset.submitted = 'true';
+    }, { once: true });
+});
+</script>
+{% endblock %}
+

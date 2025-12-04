@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - Gemini 3 Pro{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <h2>Welcome to Gemini 3 Pro</h2>
+    <p>Vehicle-to-Vector Pipeline - Convert vehicle photos to vector illustrations</p>
+</div>
+
+<div class="grid">
+    <div class="card">
+        <h3>🚂 Training</h3>
+        <p>Train or fine-tune the model by uploading paired input/output images. Configure hyperparameters and monitor training progress in real-time.</p>
+        <a href="/ui/training">
+            <button>Go to Training</button>
+        </a>
+    </div>
+    
+    <div class="card">
+        <h3>🎨 Inference</h3>
+        <p>Process images through the pipeline with customizable preprocessing options. Toggle phases on/off to control the transformation process.</p>
+        <a href="/ui/inference">
+            <button>Go to Inference</button>
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <h3>API Documentation</h3>
+    <p>Access the interactive API documentation:</p>
+    <ul>
+        <li><a href="/docs">Swagger UI</a></li>
+        <li><a href="/redoc">ReDoc</a></li>
+    </ul>
+</div>
+{% endblock %}
+
+
+
+

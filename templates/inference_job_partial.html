@@ -1,0 +1,52 @@
+<div id="job-status-container" 
+     {% if job.status != 'completed' and job.status != 'failed' %}
+     hx-get="/ui/inference/jobs/{{ job.job_id }}/status" 
+     hx-trigger="every 2s"
+     hx-target="#job-status-container"
+     hx-swap="outerHTML"
+     hx-indicator="#loading-spinner"
+     hx-on::htmx:response-error="console.error('Status update failed'); this.setAttribute('hx-trigger', 'none');"
+     {% endif %}>
+    <div id="loading-spinner" class="htmx-indicator loading-spinner"></div>
+    <div id="job-status">
+        <span class="status-badge status-{{ job.status }}">{{ job.status }}</span>
+    </div>
+    
+    {% if job.status == 'completed' %}
+    <div id="results">
+        <h3>Results</h3>
+        <div class="grid">
+            <div class="card">
+                <h4>SVG Output</h4>
+                {% if job.result and job.result.get("svg_url") %}
+                <img src="{{ job.result.svg_url }}" alt="SVG Preview" style="max-width: 100%; height: auto;">
+                <br><br>
+                <a href="{{ job.result.svg_url }}" download>
+                    <button>Download SVG</button>
+                </a>
+                {% endif %}
+            </div>
+            <div class="card">
+                <h4>PNG Preview</h4>
+                {% if job.result and job.result.get("png_preview_url") %}
+                <img src="{{ job.result.png_preview_url }}" alt="PNG Preview" style="max-width: 100%; height: auto;">
+                <br><br>
+                <a href="{{ job.result.png_preview_url }}" download>
+                    <button>Download PNG</button>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% elif job.status == 'failed' %}
+    <div id="error" class="alert alert-error">
+        <h3>Processing Failed</h3>
+        {% if job.error %}
+        <p>{{ job.error|e }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+
+

@@ -1,0 +1,52 @@
+models:
+  grounding_dino:
+    huggingface_id: "IDEA-Research/grounding-dino-base"
+    version: "1.0"
+    last_updated: "2024-12-03"
+    api_version: "0.30.0+"
+    pytorch_version: ">=2.5.1"
+    transformers_version: ">=4.56.0"
+    sha256_checksum: ""  # To be filled after download
+  
+  sam:
+    checkpoint: "sam_vit_h_4b8939.pth"
+    version: "1.0"
+    download_url: "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth"
+  
+  lama:
+    model: "big-lama"
+    version: "1.0"
+  
+  sdxl:
+    huggingface_id: "stabilityai/stable-diffusion-xl-base-1.0"
+    version: "1.0"
+    last_updated: "2024-12-03"
+    api_version: "0.30.0+"
+    pytorch_version: ">=2.5.1"
+    transformers_version: ">=4.56.0"
+  
+  controlnet_depth:
+    huggingface_id: "diffusers/controlnet-depth-sdxl-1.0"
+    version: "1.0"
+    last_updated: "2024-12-03"
+    api_version: "0.30.0+"
+    pytorch_version: ">=2.5.1"
+    transformers_version: ">=4.56.0"
+  
+  controlnet_canny:
+    huggingface_id: "diffusers/controlnet-canny-sdxl-1.0"
+    version: "1.0"
+    last_updated: "2024-12-03"
+    api_version: "0.30.0+"
+    pytorch_version: ">=2.5.1"
+    transformers_version: ">=4.56.0"
+  
+  lora_style:
+    filename: "vector_style_v1.safetensors"
+    version: "1.0"
+    training_date: "2025-01-15"
+    training_images: 54
+
+
+
+

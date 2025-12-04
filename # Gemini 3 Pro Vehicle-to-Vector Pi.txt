@@ -1,0 +1,328 @@
+# Gemini 3 Pro Vehicle-to-Vector Pipeline Implementation
+
+## Project Structure
+
+
+image_generation/
+├── src/
+│   ├── __init__.py
+│   ├── pipeline/
+│   │   ├── __init__.py
+│   │   ├── orchestrator.py          # Main pipeline coordinator
+│   │   └── config.py                 # Pipeline configuration
+│   ├── phase1_semantic_sanitization/
+│   │   ├── __init__.py
+│   │   ├── grounding_dino_detector.py # GroundingDINO object detection
+│   │   ├── sam_segmenter.py          # SAM segmentation
+│   │   ├── lama_inpainter.py         # LaMa inpainting
+│   │   └── sanitizer.py              # Phase I orchestrator
+│   ├── phase2_generative_steering/
+│   │   ├── __init__.py
+│   │   ├── sdxl_generator.py         # SDXL model wrapper
+│   │   ├── controlnet_processor.py    # Multi-ControlNet (Depth + Canny)
+│   │   ├── background_remover.py     # BiRefNet background removal
+│   │   ├── depth_estimator.py        # ZoeDepth depth maps
+│   │   ├── edge_detector.py          # Canny edge detection
+│   │   └── generator.py              # Phase II orchestrator
+│   ├── phase3_chromatic_enforcement/
+│   │   ├── __init__.py
+│   │   ├── upscaler.py               # RealESRGAN upscaling
+│   │   ├── color_quantizer.py         # CIEDE2000 color mapping
+│   │   ├── noise_remover.py           # Connected component analysis
+│   │   └── enforcer.py               # Phase III orchestrator
+│   ├── phase4_vector_reconstruction/
+│   │   ├── __init__.py
+│   │   ├── vtracer_wrapper.py        # VTracer integration
+│   │   ├── svg_processor.py          # SVG manipulation (stroke injection, duplicate removal)
+│   │   ├── centerline_tracer.py      # AutoTrace for technical lines (optional)
+│   │   └── vectorizer.py             # Phase IV orchestrator
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   ├── image_utils.py            # Image I/O and preprocessing
+│   │   ├── palette_manager.py        # 15-color palette management
+│   │   └── quality_assurance.py       # IoU checks, palette audits
+│   └── api/
+│       ├── __init__.py
+│       ├── server.py                 # FastAPI REST API
+│       └── schemas.py                 # Pydantic models
+├── cli/
+│   ├── __init__.py
+│   └── main.py                       # CLI interface
+├── tests/
+│   ├── test_phase1.py
+│   ├── test_phase2.py
+│   ├── test_phase3.py
+│   ├── test_phase4.py
+│   └── test_pipeline.py
+├── configs/
+│   ├── default_config.yaml           # Default pipeline parameters
+│   └── palette.yaml                  # 15-color palette definition
+├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
+├── README.md
+└── .env.example
+
+
+## Implementation Details
+
+### 1. Project Setup & Dependencies
+
+**File: requirements.txt**
+
+- Core ML: torch, torchvision, transformers, diffusers, accelerate
+- Computer Vision: opencv-python, pillow, scikit-image, segment-anything
+- GroundingDINO: Install from source or use groundingdino-py
+- LaMa: lama-cleaner or direct model implementation
+- SDXL: diffusers[torch] with SDXL models
+- ControlNet: controlnet-aux for depth/canny processors
+- Background Removal: rembg (BiRefNet) or direct BiRefNet implementation
+- Depth Estimation: zoedepth package
+- Upscaling: basicsr, realesrgan
+- Vectorization: VTracer binary (Rust) - need to download/compile
+- SVG Processing: svgpathtools, shapely
+- API: fastapi, uvicorn
+- Utils: numpy, scipy, pyyaml, python-dotenv
+
+**File: configs/default_config.yaml**
+
+- Model paths and checkpoints
+- Phase-specific parameters (thresholds, weights, steps)
+- Hardware settings (device, precision)
+- Output settings (resolutions, formats)
+
+**File: configs/palette.yaml**
+
+- 15 hex color codes as specified in style guide
+
+### 2. Phase I: Semantic Sanitization
+
+**File: src/phase1_semantic_sanitization/grounding_dino_detector.py**
+
+- Load GroundingDINO model (from groundingdino or HuggingFace)
+- Implement detect_objects(image, prompts, box_threshold=0.35, text_threshold=0.25)
+- Return bounding boxes for: ["side view mirror", "car logo", "brand badge", "license plate", "text", "sticker"]
+
+**File: src/phase1_semantic_sanitization/sam_segmenter.py**
+
+- Load SAM model (sam_vit_h_4b8939.pth or similar)
+- Implement generate_masks(image, boxes)
+- Convert bounding boxes to precise segmentation masks
+- Apply dilation (kernel_size=5) for surgical buffer
+
+**File: src/phase1_semantic_sanitization/lama_inpainter.py**
+
+- Load LaMa model (big-lama or lama-cleaner integration)
+- Implement inpaint(image, masks)
+- Structural inpainting to remove prohibited elements
+
+**File: src/phase1_semantic_sanitization/sanitizer.py**
+
+- Orchestrate Phase I: load image → detect → segment → inpaint
+- Return "clean plate" image
+
+### 3. Phase II: Generative Steering
+
+**File: src/phase2_generative_steering/background_remover.py**
+
+- Integrate BiRefNet for background removal
+- Return alpha-masked vehicle image
+
+**File: src/phase2_generative_steering/depth_estimator.py**
+
+- Use ZoeDepth (zoedepth-anywhere or zoedepth-nk)
+- Generate depth map from background-removed image
+
+**File: src/phase2_generative_steering/edge_detector.py**
+
+- Canny edge detection with OpenCV
+- Apply LAB color space filter to de-shine before edge detection
+- Return edge map
+
+**File: src/phase2_generative_steering/controlnet_processor.py**
+
+- Load Multi-ControlNet (Depth + Canny ControlNets for SDXL)
+- Prepare control images with proper preprocessing
+- Set control weights: depth=0.6, canny=0.4
+
+**File: src/phase2_generative_steering/sdxl_generator.py**
+
+- Load SDXL base model (stabilityai/stable-diffusion-xl-base-1.0)
+- Load custom Style LoRA (vector_style_v1.safetensors) - placeholder for now
+- Implement generation with ControlNet guidance
+- Prompt: "flat vector illustration <flt_vctr_style>..." with LoRA trigger
+- 30 inference steps, appropriate scheduler
+
+**File: src/phase2_generative_steering/generator.py**
+
+- Orchestrate Phase II: bg removal → depth/edge → SDXL generation
+- Return vector-style raster at 1024x1024
+
+### 4. Phase III: Chromatic Enforcement
+
+**File: src/phase3_chromatic_enforcement/upscaler.py**
+
+- RealESRGAN upscaling (4x to reach 4096px from 1024px)
+- Use RealESRGAN-x4plus or similar model
+
+**File: src/phase3_chromatic_enforcement/color_quantizer.py**
+
+- CIEDE2000 color distance calculation
+- Build LUT for fast color mapping
+- Map all pixels to nearest palette color
+- Optimize with unique color sampling
+
+**File: src/phase3_chromatic_enforcement/noise_remover.py**
+
+- Connected component analysis (cv2.connectedComponentsWithStats)
+- Remove blobs < 0.1% of image area
+- Merge small blobs into surrounding regions (majority vote)
+
+**File: src/phase3_chromatic_enforcement/enforcer.py**
+
+- Orchestrate Phase III: upscale → quantize → denoise
+- Return 4096px quantized image (and optionally 2048px version)
+
+### 5. Phase IV: Vector Reconstruction
+
+**File: src/phase4_vector_reconstruction/vtracer_wrapper.py**
+
+- Interface with VTracer binary (subprocess call or Python bindings)
+- Configure: filter_speckle=4, corner_threshold=60, segment_length=4
+- Use stacked mode to avoid gap artifacts
+- Return SVG XML string
+
+**File: src/phase4_vector_reconstruction/svg_processor.py**
+
+- Parse SVG XML (using xml.etree.ElementTree or svgpathtools)
+- Inject stroke attributes: stroke="black", stroke-width="2", vector-effect="non-scaling-stroke"
+- Remove duplicate paths (occlusion culling, identical paths)
+- Remove paths with bounding box area < threshold
+- Validate all fill colors are in 15-color palette
+
+**File: src/phase4_vector_reconstruction/centerline_tracer.py** (Optional Strategy B)
+
+- Skeletonization of Canny edges (skimage.morphology.skeletonize)
+- AutoTrace integration for centerline vectorization
+- Merge centerlines as top layer in SVG
+
+**File: src/phase4_vector_reconstruction/vectorizer.py**
+
+- Orchestrate Phase IV: VTracer → SVG processing → validation
+- Return final SVG file
+
+### 6. Pipeline Orchestration
+
+**File: src/pipeline/orchestrator.py**
+
+- Gemini3Pipeline class as described in document
+- process_image(input_path, palette_hex_list) method
+- Execute phases sequentially with error handling
+- Quality assurance checks (IoU validation, palette audit)
+- Return SVG and optional PNG preview
+
+**File: src/pipeline/config.py**
+
+- Load configuration from YAML
+- Model path management
+- Device allocation (GPU/CPU)
+
+### 7. Utilities
+
+**File: src/utils/image_utils.py**
+
+- Image loading/saving (PIL, OpenCV)
+- Format conversions
+- Resizing utilities
+
+**File: src/utils/palette_manager.py**
+
+- Load palette from YAML
+- Validate hex codes
+- Provide palette to quantization module
+
+**File: src/utils/quality_assurance.py**
+
+- IoU calculation between original and generated masks
+- Palette audit (scan SVG for invalid colors)
+- Geometric hallucination detection
+- Auto-retry logic with adjusted ControlNet weights
+
+### 8. API & CLI Interfaces
+
+**File: src/api/server.py**
+
+- FastAPI application
+- Endpoints:
+  - POST /process - Full pipeline
+  - POST /phase1 - Semantic sanitization only
+  - POST /phase2 - Generative steering only
+  - POST /phase3 - Chromatic enforcement only
+  - POST /phase4 - Vector reconstruction only
+- File upload handling
+- Response: SVG download or JSON with file paths
+
+**File: src/api/schemas.py**
+
+- Pydantic models for request/response
+- Input validation
+
+**File: cli/main.py**
+
+- Click or argparse CLI
+- Commands: process, phase1, phase2, phase3, phase4
+- Options: input path, output path, config file, palette file
+
+### 9. Infrastructure
+
+**File: Dockerfile**
+
+- Base: pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
+- Install all Python dependencies
+- Download model checkpoints (or mount volume)
+- Set up VTracer binary
+- Expose API port
+
+**File: docker-compose.yml**
+
+- Service definition
+- Volume mounts for models and data
+- GPU access configuration
+
+**File: .env.example**
+
+- Environment variables: model paths, API keys, device settings
+
+### 10. Testing & Documentation
+
+**File: tests/test_*.py**
+
+- Unit tests for each phase
+- Integration tests for full pipeline
+- Mock models where appropriate
+
+**File: README.md**
+
+- Installation instructions
+- Usage examples (CLI and API)
+- Configuration guide
+- Model download instructions
+
+## Implementation Order
+
+1. *Setup*: Project structure, requirements.txt, config files
+2. *Phase I*: Semantic Sanitization (can test independently)
+3. *Phase II*: Generative Steering (requires Phase I output)
+4. *Phase III*: Chromatic Enforcement (requires Phase II output)
+5. *Phase IV*: Vector Reconstruction (requires Phase III output)
+6. *Orchestration*: Pipeline coordinator
+7. *Interfaces*: CLI and API
+8. *Testing*: Unit and integration tests
+
+## Key Technical Decisions
+
+- *Model Loading*: Lazy loading to minimize memory footprint when running single phases
+- *Error Handling*: Each phase returns success/failure with error messages
+- *Caching*: Optional caching of intermediate results for debugging
+- *Logging*: Comprehensive logging at each phase for debugging
+- *Configuration*: YAML-based config for easy parameter tuning without code changes

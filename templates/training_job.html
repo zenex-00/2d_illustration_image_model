@@ -1,0 +1,74 @@
+{% extends "layout.html" %}
+
+{% block title %}Training Job {{ job.job_id[:8] }} - Gemini 3 Pro{% endblock %}
+
+{% block extra_head %}
+{% endblock %}
+
+{% block content %}
+<h2>Training Job: {{ job.job_id[:8] }}</h2>
+
+<div id="job-status-container" 
+     {% if job.status != 'completed' and job.status != 'failed' %}
+     hx-get="/ui/training/jobs/{{ job.job_id }}/status" 
+     hx-trigger="every 3s"
+     hx-swap="innerHTML"
+     hx-indicator="#loading-spinner"
+     hx-on::htmx:response-error="console.error('Status update failed'); this.setAttribute('hx-trigger', 'none');"
+     {% endif %}>
+    <div id="loading-spinner" class="htmx-indicator loading-spinner"></div>
+    <div id="job-status">
+        <span class="status-badge status-{{ job.status }}">{{ job.status }}</span>
+        <span>Progress: {{ job.progress }}%</span>
+        {% if job.current_epoch > 0 %}
+        <span>Epoch: {{ job.current_epoch }}/{{ job.total_epochs }}</span>
+        {% endif %}
+        {% if job.train_loss %}
+        <span>Train Loss: {{ "%.4f"|format(job.train_loss) }}</span>
+        {% endif %}
+        {% if job.val_loss %}
+        <span>Val Loss: {{ "%.4f"|format(job.val_loss) }}</span>
+        {% endif %}
+    </div>
+    
+    <div class="log-container">
+        {% for log in logs %}
+        <div class="log-line">{{ log|e }}</div>
+        {% endfor %}
+    </div>
+</div>
+
+{% if job.status == 'completed' %}
+<div class="alert alert-success">
+    <h3>Training Completed!</h3>
+    {% if job.artifacts.weights %}
+    <p>Weights saved to: <code>{{ job.artifacts.weights|e }}</code></p>
+    {% endif %}
+</div>
+{% elif job.status == 'failed' %}
+<div class="alert alert-error">
+    <h3>Training Failed</h3>
+    {% if job.error %}
+    <p>Error: {{ job.error|e }}</p>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+    <h3>Training Parameters</h3>
+    <ul>
+        <li>Learning Rate: {{ job.params.learning_rate }}</li>
+        <li>Batch Size: {{ job.params.batch_size }}</li>
+        <li>Epochs: {{ job.params.num_epochs }}</li>
+        <li>LoRA Rank: {{ job.params.rank }}</li>
+        <li>LoRA Alpha: {{ job.params.alpha }}</li>
+        <li>Validation Split: {{ job.params.validation_split }}</li>
+        <li>Seed: {{ job.params.seed }}</li>
+    </ul>
+</div>
+
+<a href="/ui/training">
+    <button>Back to Training</button>
+</a>
+{% endblock %}
+

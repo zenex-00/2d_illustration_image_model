@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+
+{% block title %}Inference Job {{ job.job_id[:8] }} - Gemini 3 Pro{% endblock %}
+
+{% block extra_head %}
+{% endblock %}
+
+{% block content %}
+<h2>Inference Job: {{ job.job_id[:8] }}</h2>
+
+{% include "inference_job_partial.html" %}
+
+<a href="/ui/inference">
+    <button>Process Another Image</button>
+</a>
+{% endblock %}
+

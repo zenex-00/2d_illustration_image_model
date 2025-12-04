@@ -1,0 +1,102 @@
+pipeline:
+  version: "3.0.0"
+  name: "Gemini 3 Pro Vehicle-to-Vector"
+  random_seed: 42
+
+hardware:
+  device: "cuda"
+  precision: "float16"
+  max_vram_gb: 24  # Updated for A10G (24GB VRAM)
+  enable_xformers: true
+  enable_attention_slicing: true
+
+serverless:
+  model_volume_path: "/models"
+  enable_load_run_flush: true
+  cold_start_timeout: 10
+  max_execution_time: 300
+
+phase1:
+  enabled: true
+  grounding_dino:
+    model_id: "IDEA-Research/grounding-dino-base"
+    box_threshold: 0.35
+    text_threshold: 0.25
+    prompts:
+      - "side view mirror"
+      - "car logo"
+      - "brand badge"
+      - "license plate"
+      - "text"
+      - "sticker"
+  sam:
+    model: "vit_h"
+    checkpoint: "sam_vit_h_4b8939.pth"
+    dilation_kernel: 5
+  lama:
+    model: "big-lama"
+  quality_threshold: 0.97  # IoU threshold for validation
+
+phase2:
+  enabled: true
+  iou_retry:
+    max_retries: 2
+    iou_threshold: 0.85
+  sdxl:
+    base_model: "stabilityai/stable-diffusion-xl-base-1.0"
+    num_inference_steps: 30
+    guidance_scale: 7.5
+    scheduler: "UniPCMultistepScheduler"
+    negative_prompt: "blurry, distorted, anatomically incorrect, text, watermark, logo"
+  controlnet:
+    depth_model: "diffusers/controlnet-depth-sdxl-1.0"
+    canny_model: "diffusers/controlnet-canny-sdxl-1.0"
+    depth_weight: 0.6
+    canny_weight: 0.4
+    canny_step_off: 0.75
+  lora:
+    path: "vector_style_v1.safetensors"
+    scale: 0.8
+  background_removal:
+    enabled: true
+    model: "birefnet"
+  depth_estimation:
+    enabled: true
+    model: "zoedepth-anywhere"
+  edge_detection:
+    enabled: true
+
+phase3:
+  enabled: true
+  upscaler:
+    enabled: true
+    model: "RealESRGAN_x4plus_anime"
+    scale: 4
+  quantization:
+    enabled: true
+    method: "auto"  # "exact", "approximate", or "auto" (exact if available, else approximate)
+    palette_colors: 15
+  noise_removal:
+    enabled: true
+    min_area_percent: 0.001  # 0.1% of image area
+
+phase4:
+  enabled: true
+  centerline:
+    enabled: true
+  vtracer:
+    mode: "stacked"
+    filter_speckle: 4
+    corner_threshold: 60
+    segment_length: 4
+    timeout_seconds: 300
+  svg:
+    stroke_width: 2
+    stroke_color: "black"
+    strategy: "A"  # or "B" for centerlines
+
+output:
+  formats: ["svg", "png"]
+  svg_resolution: 4096
+  png_preview_resolution: 2048
+

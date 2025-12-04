@@ -1,0 +1,27 @@
+<div id="job-status-container" 
+     {% if job.status != 'completed' and job.status != 'failed' %}
+     hx-get="/ui/training/jobs/{{ job.job_id }}/status" 
+     hx-trigger="every 3s"
+     hx-swap="innerHTML"
+     hx-on::htmx:response-error="console.error('Status update failed'); this.setAttribute('hx-trigger', 'none');"
+     {% endif %}>
+    <div id="job-status">
+        <span class="status-badge status-{{ job.status }}">{{ job.status }}</span>
+        <span>Progress: {{ "%.1f"|format(job.progress) }}%</span>
+        {% if job.current_epoch > 0 %}
+        <span>Epoch: {{ job.current_epoch }}/{{ job.total_epochs }}</span>
+        {% endif %}
+        {% if job.train_loss %}
+        <span>Train Loss: {{ "%.4f"|format(job.train_loss) }}</span>
+        {% endif %}
+        {% if job.val_loss %}
+        <span>Val Loss: {{ "%.4f"|format(job.val_loss) }}</span>
+        {% endif %}
+    </div>
+    <div class="log-container">
+        {% for log in logs %}
+        <div class="log-line">{{ log|e }}</div>
+        {% endfor %}
+    </div>
+</div>
+

@@ -1,0 +1,400 @@
+Production-Grade Vehicle-to-Vector 
+Illustration Pipeline Design: The Gemini 3 
+Pro Architecture 
+1. Executive Summary 
+The transformation of raster automotive photography into high-fidelity, minimalist vector 
+illustrations represents a sophisticated engineering challenge that transcends traditional style 
+transfer. The objective is to convert complex, real-world inputs—characterized by varied 
+lighting, specular reflections, and environmental clutter—into a strict, deterministic vector 
+aesthetic defined by a 15-color palette, consistent 2pt stroke widths, and the absence of 
+specific semantic features like brand logos and side mirrors. The legacy pipeline, built upon 
+Stable Diffusion 1.5 (SD1.5), suffers from critical architectural deficiencies: insufficient 
+resolution for clean vectorization, probabilistic rather than deterministic feature removal, and 
+significant color drift. 
+This report presents the Gemini 3 Pro Architecture, a comprehensive, industry-standard 
+solution designed to address these specific failure modes. The proposed pipeline abandons 
+the "one-shot" generation approach in favor of a modular, multi-stage workflow that 
+decouples Semantic Sanitization (Computer Vision) from Generative Steering (Generative 
+AI) and Post-Processing Enforcement (Digital Signal Processing). By integrating 
+state-of-the-art models—specifically GroundingDINO for open-set detection, the Segment 
+Anything Model (SAM) for surgical masking, and LaMa for structural inpainting—the system 
+guarantees the removal of prohibited elements before generation begins. The generative 
+phase upgrades to Stable Diffusion XL (SDXL) with Multi-ControlNet guidance (Depth + 
+Canny) and a custom Style LoRA to ensure geometric fidelity and resolution independence. 
+Finally, a rigorous post-processing engine utilizes CIEDE2000 perceptual color quantization 
+and VTracer/AutoTrace vectorization algorithms to enforce the strict 15-hex code palette and 
+2pt line weight requirements. 
+This document details the theoretical underpinnings, technical implementation strategies, and 
+operational parameters for this upgraded pipeline, providing a roadmap for deploying a fully 
+automated, scalable system capable of delivering production-ready vector assets with zero 
+human intervention. 
+2. Architectural Analysis and Legacy Audit 
+To engineer a robust solution, one must first rigorously analyze the limitations of the existing 
+workflow. The transition from a "creative prototype" to a "production pipeline" requires 
+identifying where stochastic behaviors (randomness) conflict with deterministic requirements 
+(style rules). 
+2.1. The Resolution-Fidelity Gap 
+The legacy system utilizes Stable Diffusion 1.5, which operates natively at a resolution of $512 
+\times 512$ pixels. In the domain of vector illustration, this resolution is fundamentally 
+inadequate. Vectorization algorithms, such as Potrace or VTracer, operate by detecting 
+contrast boundaries between pixels to define Bézier curves.1 At 512px, a vehicle's subtle 
+"shut-lines" (the gaps between door panels) or the curvature of a wheel arch are represented 
+by only a few pixels. When these jagged, low-frequency pixel data are traced, the resulting 
+vector paths exhibit "stair-casing" or aliasing artifacts, requiring aggressive smoothing that 
+destroys geometric accuracy.3 
+The Gemini 3 Pro architecture mandates a transition to Stable Diffusion XL (SDXL). SDXL 
+functions natively at $1024 \times 1024$ pixels, providing four times the pixel density of 
+SD1.5.3 This increase is not merely cosmetic; it is a functional requirement for "Vector-Ready 
+Raster" generation. A 1024px input allows the vectorization algorithm to distinguish between a 
+deliberate design curve and a pixel artifact, ensuring that the final SVG output maintains the 
+tight geometric tolerances required by the <3% detail removal rule. 
+2.2. The Semantic Entanglement Fallacy 
+The current pipeline attempts to remove semantic objects (logos, text, side mirrors) using 
+negative prompting (e.g., "bad hands, text, logo, watermark"). This approach suffers from 
+Semantic Entanglement. Diffusion models generate images based on probabilistic attention 
+maps; they do not possess a logical negation operator. When a user prompts for a "car," the 
+model's internal representation of a car inherently includes side mirrors and logos because 
+they are statistically present in 99% of the training data.5 Relying on a negative prompt to 
+suppress these features fights against the model's core training, leading to "ghosting" 
+artifacts where a logo is half-removed or replaced by gibberish text.3 
+To guarantee the "No Logos/Mirrors" constraint, the pipeline must move from probabilistic 
+suppression to deterministic excision. This requires a dedicated Computer Vision (CV) module 
+upstream of the generative process, tasked specifically with identifying and removing these 
+pixels before the generative model ever observes the image. 
+2.3. Chromatic Drift and Palette Compliance 
+Generative models operate in a continuous high-dimensional color space. Even when a 
+specific hex code is requested via prompt (e.g., "use color #FF0000"), the diffusion process 
+introduces variance due to latent noise interpretation and anti-aliasing. A "flat red" area in a 
+generated image actually consists of thousands of distinct RGB values—slightly lighter reds, 
+darker reds, and compression artifacts.3 The legacy pipeline lacks a mechanism to force these 
+thousands of values into the strict 15-color palette required by the style guide. This results in 
+"dirty" vectors containing hundreds of unnecessary shapes and colors that deviate from the 
+approved branding. 
+3. Phase I: Semantic Sanitization (The "Clean Plate" 
+Protocol) 
+The first phase of the upgraded pipeline is Semantic Sanitization. The goal is to 
+algorithmically sanitize the input photograph, removing all prohibited elements (logos, side 
+mirrors, text, license plates) to create a "clean plate" that serves as the perfect foundation for 
+stylization. This phase ensures that the generative model focuses purely on style transfer 
+rather than object removal. 
+3.1. Open-Set Object Detection: GroundingDINO 
+Traditional object detection models like the YOLO (You Only Look Once) series are trained on 
+closed datasets with predefined classes (e.g., COCO's 80 classes, which include "car" but not 
+"car side mirror" or "manufacturer badge").5 Training a custom YOLO model to detect side 
+mirrors and logos would require curating and labeling a dataset of thousands of images, 
+which is resource-intensive and brittle to new vehicle designs. 
+The Gemini 3 Pro architecture leverages GroundingDINO, a state-of-the-art "zero-shot" 
+open-set object detector.6 GroundingDINO fuses a Transformer-based image encoder (DINO) 
+with a text encoder, allowing the system to detect objects based on arbitrary text prompts 
+without retraining. 
+3.1.1. Technical Implementation 
+We initialize the GroundingDINO model and supply a specific set of text prompts 
+corresponding to the prohibited items: 
+● Prompts: ["side view mirror", "car logo", "brand badge", "license plate", "text", "sticker"].8 
+● Mechanism: The model projects the image and text features into a shared latent space. 
+It identifies regions in the image where the visual features strongly correlate with the 
+semantic text embeddings. 
+● Thresholding: To balance precision (avoiding false removals) and recall (ensuring all 
+logos are caught), we employ a Box Threshold of 0.35 and a Text Threshold of 0.25.9 
+This sensitivity is tuned to detect small objects like door-mounted mirrors or grille badges 
+that might otherwise be missed. 
+Unlike YOLOv8, which excels in real-time video inference but requires specific training data, 
+GroundingDINO offers the flexibility to detect "side mirrors" immediately based on its massive 
+pre-training on image-text pairs.10 This capability is critical for handling the diversity of vehicle 
+types (motorbikes vs. cars) mentioned in the user request. 
+3.2. Surgical Segmentation: Segment Anything Model (SAM) 
+GroundingDINO outputs bounding boxes—rectangular coordinates $(x, y, w, h)$. Removing a 
+rectangular patch from an image is destructive; a rectangle around a circular logo includes 
+surrounding grille texture, and a rectangle around a side mirror includes parts of the door and 
+window that must be preserved. To achieve the "surgical" removal required by the <3% detail 
+loss constraint, we must refine these boxes into pixel-perfect masks. 
+We integrate the Segment Anything Model (SAM), specifically the vit_h (Vision Transformer 
+Huge) checkpoint for maximum edge fidelity.12 
+● Prompting SAM: We pass the bounding boxes generated by GroundingDINO as "box 
+prompts" to SAM. 
+● Mask Generation: SAM analyzes the visual data within the box and generates a binary 
+mask that isolates the foreground object (the mirror) from the background (the door 
+panel).14 
+● Mask Refinement (Dilation): Segmentation masks often hug the object's edge perfectly. 
+However, for inpainting, it is beneficial to include a small buffer zone to remove shadows 
+and anti-aliased edges. We apply a morphological dilation operation using a $5 \times 
+5$ or $10 \times 10$ pixel kernel.16 This expands the mask boundary by a few pixels, 
+ensuring the object is completely covered and providing the inpainting model with a 
+clean "seam" to work with. 
+3.3. Structural Hallucination: Large Mask Inpainting (LaMa) 
+Once the objects are masked, the pixels must be replaced. Standard inpainting algorithms like 
+cv2.inpaint (based on Navier-Stokes or Telea methods) function by diffusing color from the 
+boundary inwards.17 This works for small scratches but fails catastrophically for large objects 
+like side mirrors. A Navier-Stokes inpainter produces a blurry smudge where the mirror was, 
+destroying the continuity of the car's window line or character crease.18 
+The pipeline employs LaMa (Resolution-robust Large Mask Inpainting).19 LaMa utilizes 
+Fast Fourier Convolutions (FFCs), which have a global receptive field covering the entire 
+image. This allows the model to "see" the car's body lines on the left side of the mask and the 
+right side of the mask, and mathematically predict how they should connect through the 
+missing region.19 
+● Application: LaMa effectively "hallucinates" the missing door panel, window glass, or 
+grille texture that was obscured by the mirror or logo. The result is a geometrically 
+consistent "sanitized" vehicle that appears as if it was manufactured without those parts. 
+Phase I Output: A high-resolution ($1024 \times 1024$) raster image of the vehicle, identical 
+to the input but with all logos, text, and mirrors seamlessly removed. This "clean plate" serves 
+as the ground truth for the subsequent stylization phase. 
+4. Phase II: Generative Steering (The Gemini 3 Pro 
+Engine) 
+With the semantic contaminants removed, the pipeline focuses on the core artistic 
+transformation: converting a photorealistic image into a flat, minimalist vector illustration while 
+rigidly preserving the vehicle's geometry. This phase employs the "Gemini 3 Pro" approach 3, 
+utilizing SDXL steered by Multi-ControlNets and a Style LoRA. 
+4.1. Base Model Selection: Stable Diffusion XL 1.0 
+SDXL 1.0 serves as the generative backbone. Its dual text-encoder architecture and 2.6-billion 
+parameter UNet allow it to separate the concept of "style" (flat, vector, minimalist) from 
+"content" (car, wheel, window) with far greater efficacy than SD1.5.4 Critically, SDXL's native 
+1024px resolution ensures that the generated lines are sharp and crisp, minimizing the 
+"wobble" and artifacts that plague lower-resolution models during upscaling.3 
+4.2. Pre-Processing: Background and Reflection Suppression 
+Before conditioning the model, we must prepare the input to ensure the ControlNets focus on 
+the correct features. 
+4.2.1. BiRefNet for Segmentation 
+We replace standard background removal tools (like rembg / U-2-Net) with BiRefNet 
+(Bilateral Reference Network).3 BiRefNet represents the state-of-the-art in dichotomous 
+image segmentation (DIS). Unlike older models, it excels at preserving high-frequency details 
+such as radio antennas, open wheel spokes, and the transparent edges of windows. This 
+ensures the car is cleanly isolated on a white or transparent background, preventing the 
+generative model from hallucinating background elements into the car's bodywork. 
+4.2.2. Intrinsic Reflection Suppression (The "De-Shine" Filter) 
+A critical issue in vehicle style transfer is specular reflection. A chrome bumper or a glossy 
+hood reflects the sky, trees, and street. To a Canny edge detector, a reflection of a tree on a 
+hood looks like a physical line painted on the car. If we feed raw photography to ControlNet, 
+the model will render these reflections as permanent vector lines, violating the 
+"clean/minimalist" style rule.3 
+To solve this, we implement a Luminance-Channel Filtering technique 3: 
+1. Color Space Conversion: Convert the sanitized RGB image to the CIELAB (Lab) color 
+space. The 'L' channel represents Lightness, while 'a' and 'b' represent color. 
+2. Bilateral Filtering: Apply a strong Bilateral Filter to the L-channel only. A bilateral filter 
+smooths surfaces (reducing noise and reflections) while preserving strong edges 
+(shut-lines, contours). 
+3. CLAHE: Apply Contrast Limited Adaptive Histogram Equalization (CLAHE) to the 
+L-channel to normalize lighting and reduce the intensity of specular highlights (glare). 
+4. Recombination: Merge the processed L-channel back with the original 'a' and 'b' 
+channels and convert back to RGB. 
+The result is a "matte" version of the car where reflections are washed out, but the physical 
+geometry is preserved. This "de-shined" image is used exclusively for generating the 
+ControlNet Edge Map, ensuring the model traces the car's shape, not its reflections.3 
+4.3. Multi-ControlNet Conditioning 
+To satisfy the requirement of <3% detail removal and maintaining the vehicle's exact identity, 
+we cannot rely on text prompts alone. We employ a deterministic guidance strategy using two 
+ControlNets in parallel.3 
+1. ControlNet Depth (SDXL): We generate a depth map using ZoeDepth or MiDaS. This 
+map encodes the 3D volume of the car. 
+○ Function: It anchors the global structure—the stance of the vehicle, the perspective 
+of the wheels, and the volumetric proportions. It prevents the "melting" or 
+perspective distortion common in diffusion models. 
+○ Weighting: 0.6–0.7. 
+2. ControlNet Canny/Lineart (SDXL): We generate an edge map from the "de-shined" 
+image using the Canny algorithm or a Lineart preprocessor. 
+○ Function: It captures high-frequency details: the exact curve of the headlights, the 
+pattern of the grille, the cut-lines of the doors. 
+○ Weighting: 0.4–0.5. 
+○ Step-Off Schedule: Crucially, we set the guidance_end parameter for the Canny 
+ControlNet to 0.75 (75% of the diffusion steps).3 This enforces strict adherence to 
+lines during the initial structure formation but releases the model in the final 25% of 
+steps. This allows the Style LoRA to "clean up" jagged, photographic edges into 
+smooth, stylized vector curves, preventing the output from looking like a messy 
+tracing. 
+4.4. Style Transfer via Custom LoRA 
+We train a Style LoRA (Low-Rank Adaptation) on the 54 paired images provided. 
+Fine-tuning the full SDXL model on such a small dataset risks "catastrophic forgetting" (losing 
+the ability to draw a generic car) and overfitting.21 A LoRA modifies only a small subset of 
+weights (matrices), making it ideal for learning a specific aesthetic style without destroying 
+the model's semantic knowledge. 
+● Training Configuration: 
+○ Base Model: SDXL 1.0 Base. 
+○ Dataset: 54 Input/Output pairs. 
+○ Captioning: Synthetic captions focusing on style (e.g., "flat vector illustration, 
+minimalist, side view, white background"). We use a generic token like flt_vctr_style to 
+trigger the effect. 
+○ Rank (Dimension): 32 or 64. A higher rank captures more detail but risks overfitting; 
+32 is often the "sweet spot" for style transfer.22 
+○ Alpha: 16 (Scaling factor). 
+○ Augmentation: Horizontal flips and slight color jittering are used to artificially 
+expand the dataset and prevent the model from memorizing specific cars.21 
+Phase II Output: A 1024px raster image that possesses the exact geometry of the sanitized 
+input but is rendered with the flat, minimalist shading characteristic of the 54 training 
+examples. 
+5. Phase III: Chromatic Enforcement (The Palette 
+Enforcer) 
+The generated image, while stylistically correct, is still a continuous-tone RGB raster. It 
+contains anti-aliasing pixels and subtle gradients that violate the "Flat" and "15 Hex Code" 
+rules. This phase enforces strict chromatic compliance using Digital Signal Processing (DSP) 
+techniques. 
+5.1. High-Resolution Upscaling 
+Before quantization, we perform AI Upscaling to $4096 \times 4096$ pixels. We use 
+RealESRGAN (x4-plus-anime) or 4x-UltraSharp, models trained specifically to upscale 
+illustrations while preserving sharp edges.3 
+● Rationale: Color quantization works best on large, contiguous blocks of pixels. Upscaling 
+before quantization reduces the relative size of anti-aliasing fringes. A 3-pixel wide fuzzy 
+edge at 1024px becomes a 12-pixel wide gradient at 4096px, but relative to the crisp 
+shapes, the "core" color regions become massive and distinct, allowing the quantization 
+algorithm to latch onto the dominant colors more effectively. 
+5.2. Perceptual Color Mapping (CIEDE2000) 
+The core requirement is to map every pixel in the image to the nearest color in the strict 
+15-hex palette. Standard Euclidean distance ($\sqrt{\Delta R^2 + \Delta G^2 + \Delta B^2}$) in 
+RGB space is insufficient because RGB is not perceptually uniform. The human eye is more 
+sensitive to differences in green than in blue. A Euclidean map might merge a dark blue 
+shadow with a black tire, losing detail that the eye can clearly see.24 
+We employ the CIEDE2000 color difference formula ($\Delta E_{00}$), the industry standard 
+for determining the perceptual similarity between two colors.26 
+● Process: 
+1. Palette Conversion: Convert the 15 target Hex codes into the CIELAB color space. 
+2. Image Conversion: Convert the upscaled raster image to CIELAB. 
+3. Distance Calculation: For every pixel, calculate the CIEDE2000 distance to each of 
+the 15 palette colors. 
+4. Reassignment: Assign the pixel the value of the palette color with the minimum 
+$\Delta E_{00}$ distance. 
+● Optimization Strategy: Calculating complex $\Delta E_{00}$ for 16 million pixels (4K 
+resolution) is computationally expensive. To optimize, we use a k-Dimensional Tree 
+(cKDTree) or a pre-computed Look-Up Table (LUT).27 We sample the image's unique 
+colors (which are far fewer than pixels), map those unique colors to the palette, and then 
+broadcast the changes back to the full image array. This reduces processing time from 
+minutes to milliseconds. 
+5.3. Semantic Noise Removal (The <3% Rule) 
+Quantization often leaves behind "salt and pepper" noise—stray pixels that were on the 
+boundary of a gradient and got mapped to a contrasting palette color. 
+We apply Connected Component Analysis using cv2.connectedComponentsWithStats.29 
+● Logic: The system identifies every contiguous "blob" of color. 
+● Threshold: We calculate a threshold based on the user's "<3% detail removal" rule. 
+Assuming this implies removing features smaller than a noticeable speck, we set a 
+minimum area threshold (e.g., 0.1% of total image area). 
+● Culling: Any blob smaller than this threshold is identified as noise. Its pixels are merged 
+into the surrounding color region (using a majority vote of the neighbor pixels), effectively 
+"healing" the noisy patch.30 
+Phase III Output: A 4096px image composed exclusively of the 15 approved hex codes, with 
+crisp, sharp edges and no gradient noise. 
+6. Phase IV: Vector Reconstruction (The Geometric 
+Module) 
+The final phase converts the quantized raster into a scalable vector graphic (SVG). The style 
+rules explicitly demand 2pt lines and no duplicate paths. 
+6.1. Vectorization Strategy: VTracer vs. Potrace 
+Standard tools like Potrace operate on binary (black and white) images. To use Potrace for 
+color, one must separate the image into 15 binary layers, trace them individually, and stack 
+them. This often results in "gaps" or white slivers between touching shapes due to rounding 
+errors.1 
+We select VTracer (VisionCortex), a modern vectorization engine designed for multi-color 
+tracing.32 
+● Stacking: VTracer supports a stacked mode, where shapes are drawn on top of one 
+another (like a collage) rather than fitting together like a puzzle. This eliminates gap 
+artifacts entirely.32 
+● Configuration: We run VTracer on the quantized 4K image with settings tuned for "hard" 
+edges: filter_speckle=4, corner_threshold=60, segment_length=4. 
+6.2. Enforcing "2pt Lines" 
+The requirement for "2pt lines" implies a specific visual style: either outlines around the filled 
+shapes or independent technical lines. Since VTracer outputs filled polygons (shapes) rather 
+than centerlines (strokes), we implement a Hybrid Post-Processing Strategy. 
+Strategy A: Attribute Injection (Border Enforcement) 
+For a "cel-shaded" look where every color patch has an outline, we parse the generated SVG 
+XML. We iterate through every <path> element and inject specific SVG attributes: 
+● stroke="black" (or the designated dark palette color). 
+● stroke-width="2". 
+● vector-effect="non-scaling-stroke": This is the critical technical solution.33 This attribute 
+ensures that the line width remains visually constant at 2 units regardless of the zoom 
+level or scaling of the SVG. If the user scales the car to the size of a billboard, the lines 
+won't balloon to 500px wide; they will remain delicate and crisp. 
+Strategy B: Composite Centerlines (Technical Detail) 
+If the "2pt lines" refer to specific details like door gaps (shut-lines) independent of color 
+changes, we perform a parallel trace: 
+1. Line Extraction: We take the Canny edge map generated in Phase II. 
+2. Skeletonization: We apply morphological thinning (skimage.morphology.skeletonize) to 
+reduce the thick edge detection lines to single-pixel centerlines.35 
+3. Centerline Tracing: We use AutoTrace (or inkscape-centerline-trace), which 
+specifically supports centerline vectorization (converting a line of pixels into a single 
+open path rather than a closed loop around the pixels).36 
+4. Merging: We inject these open paths into the final SVG as a top layer, assigning them 
+f
+ ill="none", stroke="black", and stroke-width="2". 
+Recommendation: Strategy A is more robust for general illustration. Strategy B is superior for 
+"technical diagram" aesthetics. The pipeline should default to A but expose B as a 
+configuration option. 
+6.3. Duplicate Removal and Sanitization 
+VTracer's stacking method can sometimes produce redundant shapes (e.g., a large 
+background shape fully covered by foreground shapes). 
+● Occlusion Culling: We implement a Python script using svgpathtools or shapely. We 
+analyze the geometry of the paths. If a path is fully contained within another path of the 
+same color, or if two paths have identical d (data) attributes, the redundant path is 
+deleted from the DOM.29 
+● Final Filter: We perform a final pass to remove any paths with a bounding box area $< 
+X$, enforcing the final stage of the <3% detail removal rule to ensure the vector file is 
+lightweight and clean. 
+7. Implementation Action Plan & System Architecture 
+7.1. Hardware & Infrastructure Stack 
+● Compute: NVIDIA A100 (40GB) or A10G (24GB) is required to hold the SDXL UNet, 
+ControlNets, and GroundingDINO/SAM models in VRAM simultaneously to minimize 
+latency. 
+● Environment: Docker container based on 
+pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime. 
+● Libraries: diffusers, transformers (Hugging Face), segment-anything (Meta), 
+opencv-python, scikit-image, svgpathtools. 
+● External Binaries: VTracer (Rust-compiled binary), AutoTrace. 
+ 
+7.2. Pipeline Execution Flow (Python Logic) 
+ 
+ 
+Python 
+ 
+ 
+class Gemini3Pipeline: 
+    def _init_(self): 
+        self.detector = GroundingDINO.load() 
+        self.segmenter = SAM.load() 
+        self.inpainter = LaMa.load() 
+        self.generator = StableDiffusionXL.load(lora="vector_style_v1.safetensors") 
+        self.controlnets = 
+         
+    def process_image(self, input_image_path, palette_hex_list): 
+        # Phase I: Semantic Sanitization 
+        raw_img = load_image(input_image_path) 
+        boxes = self.detector.predict(raw_img, prompts=["logo", "side mirror", "text"]) 
+        masks = self.segmenter.generate_masks(raw_img, boxes) 
+        masks = dilate_masks(masks, kernel_size=5) # Surgical buffer 
+        clean_plate = self.inpainter.inpaint(raw_img, masks) 
+         
+        # Phase II: Generative Steering 
+        # Pre-process for ControlNets 
+        bg_removed = birefnet_remove_bg(clean_plate) 
+        depth_map = zoe_depth(bg_removed) 
+        matte_car = apply_lab_filter(bg_removed) # De-shine 
+        edge_map = canny_edge(matte_car) 
+         
+        # Generation 
+        vector_raster = self.generator.run( 
+            prompt="flat vector illustration <flt_vctr_style>...", 
+            image=bg_removed, 
+control_images=[depth_map, edge_map], 
+control_weights=[0.6, 0.4], 
+steps=30 
+) 
+# Phase III: Chromatic Enforcement 
+upscaled = realesrgan_upscale(vector_raster, scale=4) # 4096px 
+quantized = ciede2000_map(upscaled, palette_hex_list) 
+denoised = remove_small_blobs(quantized, min_area_percent=0.001) 
+# Phase IV: Vector Reconstruction 
+svg_xml = vtracer_vectorize(denoised, mode='stacked') 
+f
+ inal_svg = inject_stroke_attributes(svg_xml, width="2", effect="non-scaling-stroke") 
+f
+ inal_svg = remove_duplicates(final_svg) 
+return final_svg, resize_image(denoised, 2048) # Returns SVG and 2048px PNG 
+7.3. Quality Assurance and Failure Mitigation 
+● IoU Check: We compute the Intersection over Union (IoU) between the alpha mask of the 
+original car and the alpha mask of the generated vector. If IoU < 0.85, the system flags a 
+"Geometric Hallucination" (the car shape changed too much) and automatically retries 
+with higher ControlNet weights. 
+● Palette Audit: A final script scans the SVG fill colors. If any color exists that is not in the 
+15-hex list (due to vectorizer rounding), it is force-snapped to the nearest valid hex code. 
+8. Conclusion 
+The "Gemini 3 Pro" architecture represents a paradigm shift for vehicle-to-vector automation. 
+By dismantling the "black box" of end-to-end generation and replacing it with a specialized 
+assembly line of Computer Vision (Semantic Sanitization), Generative AI (Steered Synthesis), 
+and DSP (Chromatic/Geometric Enforcement), we create a system that is deterministic and 
+compliant by design. This pipeline does not merely "hope" for a flat vector result; it 
+mathematically constructs one layer by layer, ensuring that every curve, color, and line meets 
+the rigorous engineering standards defined by the client. The result is a scalable, industrial 
+tool capable of processing thousands of images with the fidelity of a human illustrator.
