@@ -40,11 +40,13 @@ class LoRADataset:
         tokenizer,
         text_encoder,
         text_encoder_2,
+        tokenizer_2=None,  # Optional second tokenizer for SDXL
         size: int = 1024,
         augmentation: bool = True
     ):
         self.image_pairs = image_pairs
         self.tokenizer = tokenizer
+        self.tokenizer_2 = tokenizer_2 or tokenizer  # Use tokenizer_2 if provided, else fallback to tokenizer
         self.text_encoder = text_encoder
         self.text_encoder_2 = text_encoder_2
         self.size = size
@@ -156,8 +158,8 @@ class LoRADataset:
             # outputs[0] is last_hidden_state: [batch, seq_len, hidden_size]
             prompt_embeds = outputs_1[0]  # Shape: [1, 77, 768]
         
-        # Encode with text encoder 2
-        tokens_2 = self.tokenizer(
+        # Encode with text encoder 2 (use tokenizer_2 if available)
+        tokens_2 = self.tokenizer_2(
             prompt,
             padding="max_length",
             max_length=77,
@@ -172,14 +174,41 @@ class LoRADataset:
             prompt_embeds_2 = outputs_2[0]  # last_hidden_state: [1, 77, 1280]
             pooled_prompt_embeds = outputs_2[1]  # text_embeds (pooled output): [1, 1280]
         
-        # Ensure both embeddings have the same shape [batch, seq_len, hidden]
-        # Both should be 3D tensors: [1, 77, hidden_size]
-        if len(prompt_embeds.shape) != len(prompt_embeds_2.shape):
-            # If one is missing batch dimension, add it
-            if len(prompt_embeds.shape) == 2:
-                prompt_embeds = prompt_embeds.unsqueeze(0)
-            if len(prompt_embeds_2.shape) == 2:
-                prompt_embeds_2 = prompt_embeds_2.unsqueeze(0)
+        # Ensure both embeddings have shape [batch, seq_len, hidden] = [1, 77, hidden_size]
+        # Handle different possible shapes from the encoders
+        if len(prompt_embeds.shape) == 2:
+            # [seq_len, hidden] -> [1, seq_len, hidden]
+            prompt_embeds = prompt_embeds.unsqueeze(0)
+        elif len(prompt_embeds.shape) == 3:
+            # Already [batch, seq_len, hidden], ensure batch=1
+            if prompt_embeds.shape[0] != 1:
+                prompt_embeds = prompt_embeds[:1]  # Take first batch
+        
+        if len(prompt_embeds_2.shape) == 2:
+            # [seq_len, hidden] -> [1, seq_len, hidden]
+            prompt_embeds_2 = prompt_embeds_2.unsqueeze(0)
+        elif len(prompt_embeds_2.shape) == 3:
+            # Already [batch, seq_len, hidden], ensure batch=1
+            if prompt_embeds_2.shape[0] != 1:
+                prompt_embeds_2 = prompt_embeds_2[:1]  # Take first batch
+        
+        # Ensure sequence lengths match (both should be 77)
+        seq_len_1 = prompt_embeds.shape[1]
+        seq_len_2 = prompt_embeds_2.shape[1]
+        
+        if seq_len_1 != seq_len_2:
+            # Pad the shorter one to match
+            target_len = max(seq_len_1, seq_len_2)
+            if seq_len_1 < target_len:
+                # Pad prompt_embeds
+                padding = torch.zeros(1, target_len - seq_len_1, prompt_embeds.shape[2],
+                                    device=prompt_embeds.device, dtype=prompt_embeds.dtype)
+                prompt_embeds = torch.cat([prompt_embeds, padding], dim=1)
+            if seq_len_2 < target_len:
+                # Pad prompt_embeds_2
+                padding = torch.zeros(1, target_len - seq_len_2, prompt_embeds_2.shape[2],
+                                    device=prompt_embeds_2.device, dtype=prompt_embeds_2.dtype)
+                prompt_embeds_2 = torch.cat([prompt_embeds_2, padding], dim=1)
         
         # Ensure same device
         if prompt_embeds.device != prompt_embeds_2.device:
@@ -282,11 +311,13 @@ def train_lora(
     val_pairs = image_pairs[split_idx:]
     
     # Create datasets
+    # SDXL uses two tokenizers: tokenizer for text_encoder, tokenizer_2 for text_encoder_2
     train_dataset = LoRADataset(
         train_pairs,
         pipe.tokenizer,
         pipe.text_encoder,
         pipe.text_encoder_2,
+        tokenizer_2=getattr(pipe, 'tokenizer_2', pipe.tokenizer),  # Use tokenizer_2 if available
         augmentation=True
     )
     
@@ -295,6 +326,7 @@ def train_lora(
         pipe.tokenizer,
         pipe.text_encoder,
         pipe.text_encoder_2,
+        tokenizer_2=getattr(pipe, 'tokenizer_2', pipe.tokenizer),  # Use tokenizer_2 if available
         augmentation=False
     )
     
