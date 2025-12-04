@@ -752,10 +752,11 @@ async def ui_training_submit(
         targets_dir.mkdir(parents=True, exist_ok=True)
         
         for i, (input_file, target_file) in enumerate(zip(input_files, target_files)):
-            # Validate images - allow larger dimensions for training (max 16384px)
+            # Validate images - allow very large dimensions for training (max 65536px)
             # Training will resize to 1024x1024 anyway, so we allow large uploads
-            input_img = validate_uploaded_image(input_file, max_dimension=16384)
-            target_img = validate_uploaded_image(target_file, max_dimension=16384)
+            # We'll resize down to 2048px max after validation to save storage
+            input_img = validate_uploaded_image(input_file, max_dimension=65536)
+            target_img = validate_uploaded_image(target_file, max_dimension=65536)
             
             # Resize very large images to reduce storage/processing time
             # Keep aspect ratio, max dimension 2048px for storage efficiency
