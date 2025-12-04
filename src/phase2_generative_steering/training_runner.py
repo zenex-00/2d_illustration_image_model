@@ -28,6 +28,7 @@ class TrainingCallbacks:
             self.job_id,
             progress=progress,
             step=step,
+            total_steps=total_steps,
             train_loss=loss
         )
         self.registry.add_job_log(

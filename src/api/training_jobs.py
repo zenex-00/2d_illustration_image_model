@@ -157,7 +157,9 @@ class TrainingJobRegistry:
         job_id: str,
         progress: Optional[float] = None,
         epoch: Optional[int] = None,
+        total_epochs: Optional[int] = None,
         step: Optional[int] = None,
+        total_steps: Optional[int] = None,
         train_loss: Optional[float] = None,
         val_loss: Optional[float] = None
     ) -> bool:
@@ -171,8 +173,12 @@ class TrainingJobRegistry:
                 job.progress = min(max(progress, 0.0), 100.0)
             if epoch is not None:
                 job.current_epoch = epoch
+            if total_epochs is not None:
+                job.total_epochs = total_epochs
             if step is not None:
                 job.current_step = step
+            if total_steps is not None:
+                job.total_steps = total_steps
             if train_loss is not None:
                 job.train_loss = train_loss
             if val_loss is not None:
