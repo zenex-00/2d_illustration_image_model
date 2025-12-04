@@ -756,12 +756,30 @@ async def ui_training_submit(
             input_img = validate_uploaded_image(input_file)
             target_img = validate_uploaded_image(target_file)
             
-            # Save files
-            input_path = inputs_dir / f"{i:04d}_{input_file.filename}"
-            target_path = targets_dir / f"{i:04d}_{target_file.filename}"
+            # Convert RGBA to RGB if needed (for JPEG compatibility), otherwise keep original format
+            # Always save training images as PNG to preserve quality and support transparency
+            if input_img.mode == 'RGBA':
+                # Convert RGBA to RGB with white background for better training compatibility
+                rgb_img = Image.new('RGB', input_img.size, (255, 255, 255))
+                rgb_img.paste(input_img, mask=input_img.split()[3])  # Use alpha channel as mask
+                input_img = rgb_img
+            elif input_img.mode not in ('RGB', 'L'):
+                input_img = input_img.convert('RGB')
             
-            input_img.save(input_path)
-            target_img.save(target_path)
+            if target_img.mode == 'RGBA':
+                # Convert RGBA to RGB with white background
+                rgb_img = Image.new('RGB', target_img.size, (255, 255, 255))
+                rgb_img.paste(target_img, mask=target_img.split()[3])
+                target_img = rgb_img
+            elif target_img.mode not in ('RGB', 'L'):
+                target_img = target_img.convert('RGB')
+            
+            # Save files as PNG (lossless, supports all modes)
+            input_path = inputs_dir / f"{i:04d}_{Path(input_file.filename).stem}.png"
+            target_path = targets_dir / f"{i:04d}_{Path(target_file.filename).stem}.png"
+            
+            input_img.save(input_path, 'PNG')
+            target_img.save(target_path, 'PNG')
         
         registry.add_job_log(job_id, f"Saved {len(input_files)} image pairs", level="info")
         
