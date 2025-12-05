@@ -2,7 +2,7 @@ import os
 import time
 import uuid
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.responses import JSONResponse, Response, FileResponse, RedirectResponse, HTMLResponse
@@ -223,4 +223,60 @@ if os.path.exists("templates"):
     @app.get("/ui/inference/jobs/{job_id}", response_class=HTMLResponse)
     async def ui_inference_job(request: Request, job_id: str):
         return templates.TemplateResponse("inference_job.html", {"request": request, "job_id": job_id})
+
+    @app.post("/ui/inference", response_class=RedirectResponse)
+    async def ui_inference_post(
+        background_tasks: BackgroundTasks,
+        file: UploadFile = File(...),
+        palette_hex_list: Optional[str] = Form(None),
+        request: Request = None
+    ):
+        """Handle inference form submission"""
+        job_id = str(uuid.uuid4())
+        logger.info("ui_inference_submitted", job_id=job_id)
+        
+        # Save input file
+        input_path = os.path.join(API_OUTPUT_DIR, f"{job_id}_input.png")
+        with open(input_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+            
+        # Create job
+        job_queue.create_job(job_id)
+        
+        # Process in background
+        background_tasks.add_task(
+            run_pipeline_task, 
+            job_id, 
+            input_path, 
+            palette_hex_list,
+            None # config overrides
+        )
+        
+        return RedirectResponse(url=f"/ui/inference/jobs/{job_id}", status_code=303)
+
+    @app.post("/ui/training", response_class=RedirectResponse)
+    async def ui_training_post(
+        background_tasks: BackgroundTasks,
+        input_files: List[UploadFile] = File(...),
+        target_files: List[UploadFile] = File(...),
+        learning_rate: float = Form(...),
+        batch_size: int = Form(...),
+        num_epochs: int = Form(...),
+        rank: int = Form(...),
+        alpha: int = Form(...),
+        validation_split: float = Form(...),
+        seed: int = Form(...),
+        request: Request = None
+    ):
+        """Handle training form submission (Mock implementation)"""
+        job_id = str(uuid.uuid4())
+        logger.info("ui_training_submitted", job_id=job_id, num_inputs=len(input_files))
+        
+        # In a real impl, we would save files and start training
+        # For now, just create a job record so the UI doesn't 404
+        job_queue.create_job(job_id)
+        job_queue.update_job(job_id, status="pending", progress=0)
+        
+        return RedirectResponse(url=f"/ui/training/jobs/{job_id}", status_code=303)
 
