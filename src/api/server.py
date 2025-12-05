@@ -5,7 +5,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request, Depends
-from fastapi.responses import JSONResponse, Response, FileResponse
+from fastapi.responses import JSONResponse, Response, FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -75,6 +75,11 @@ async def startup_event():
 async def shutdown_event():
     """Server shutdown event"""
     logger.info("server_shutdown")
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect root to docs"""
+    return RedirectResponse(url="/docs")
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
