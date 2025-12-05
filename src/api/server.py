@@ -218,11 +218,17 @@ if os.path.exists("templates"):
 
     @app.get("/ui/training/jobs/{job_id}", response_class=HTMLResponse)
     async def ui_training_job(request: Request, job_id: str):
-        return templates.TemplateResponse("training_job.html", {"request": request, "job_id": job_id})
+        job = job_queue.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return templates.TemplateResponse("training_job.html", {"request": request, "job": job})
 
     @app.get("/ui/inference/jobs/{job_id}", response_class=HTMLResponse)
     async def ui_inference_job(request: Request, job_id: str):
-        return templates.TemplateResponse("inference_job.html", {"request": request, "job_id": job_id})
+        job = job_queue.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return templates.TemplateResponse("inference_job.html", {"request": request, "job": job})
 
     @app.post("/ui/inference", response_class=RedirectResponse)
     async def ui_inference_post(
