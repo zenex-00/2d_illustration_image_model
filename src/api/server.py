@@ -208,7 +208,19 @@ if os.path.exists("templates"):
     from fastapi.templating import Jinja2Templates
     templates = Jinja2Templates(directory="templates")
     
-    @app.get("/ui")
-    async def ui_home(request: Request):
-        return templates.TemplateResponse("index.html", {"request": request})
+    @app.get("/ui/training", response_class=HTMLResponse)
+    async def ui_training(request: Request):
+        return templates.TemplateResponse("training.html", {"request": request})
+
+    @app.get("/ui/inference", response_class=HTMLResponse)
+    async def ui_inference(request: Request):
+        return templates.TemplateResponse("inference.html", {"request": request})
+
+    @app.get("/ui/training/jobs/{job_id}", response_class=HTMLResponse)
+    async def ui_training_job(request: Request, job_id: str):
+        return templates.TemplateResponse("training_job.html", {"request": request, "job_id": job_id})
+
+    @app.get("/ui/inference/jobs/{job_id}", response_class=HTMLResponse)
+    async def ui_inference_job(request: Request, job_id: str):
+        return templates.TemplateResponse("inference_job.html", {"request": request, "job_id": job_id})
 
