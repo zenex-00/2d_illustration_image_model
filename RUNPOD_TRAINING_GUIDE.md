@@ -33,12 +33,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    - **RTX 4090** - Compatible
    - **Avoid**: GPUs with less than 12GB VRAM
 3. **Container Image**: 
-   - **For RTX 3090/A10G/RTX 4090**: `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime` (Recommended)
+   - **For all GPUs**: `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime` (Recommended)
    - **For RTX 5090**: 
-     - **Recommended**: Use `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime` and upgrade PyTorch in startup command (see below)
+     - **Recommended**: Use `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime` and upgrade PyTorch to 2.8.0+ with CUDA 12.8+ in startup command (see below)
      - **Alternative**: Try `pytorch/pytorch:2.9.1-cuda12.9-cudnn9-runtime` (newer, verify availability)
    
-   **Note**: RTX 5090 requires PyTorch 2.8+. Most reliable: Use 2.1 image + upgrade PyTorch (Recommended approach).
+   **Note**: PyTorch 2.8.0+ is now required for all GPUs (backward compatible). RTX 5090 requires CUDA 12.8+ support. Most reliable: Use 2.1 image + upgrade PyTorch in startup command (Recommended approach).
 4. **Volume Mounts**:
    - Select your volume: `gemini3-models`
    - **Mount Path**: `/models`
@@ -54,10 +54,12 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
 6. **Ports**: Add port `8000` (TCP)
 7. **Startup Command** (replace `YOUR_GITHUB_URL`):
    
-   **For RTX 3090/A10G/RTX 4090 (PyTorch 2.1)**:
+   **For RTX 3090/A10G/RTX 4090 (PyTorch 2.8.0+)**:
    ```bash
-   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch>=2.8.0 torchvision>=0.23.0 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
+   
+   **Note**: PyTorch 2.8.0+ is now required for all GPUs (backward compatible). Upgrading PyTorch before installing other dependencies ensures torchvision compatibility and prevents dtype mismatch errors.
    
    **For RTX 5090 (PyTorch 2.8.0+ required - sm_120 support)**:
    ```bash
@@ -122,7 +124,11 @@ git clone https://github.com/isl-org/ZoeDepth.git  # ZoeDepth doesn't have setup
 # 3. Install dependencies
 cd /workspace/image_generation
 
-# If using RTX 5090, upgrade PyTorch to 2.8.0+ first (required for sm_120 support):
+# Upgrade PyTorch and torchvision together first (required for all GPUs with PyTorch 2.8.0+)
+# This prevents dtype mismatch errors and ensures compatibility
+pip install --upgrade torch>=2.8.0 torchvision>=0.23.0
+
+# If using RTX 5090, use CUDA 12.8 nightly builds instead:
 # pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
 # Note: CUDA 12.8 nightly builds (cu128) are confirmed to work with RTX 5090
 
@@ -311,10 +317,11 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 
 1. **Upgrade PyTorch in Pod** (Recommended for RTX 5090):
    - Use PyTorch 2.1 image: `pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime`
-   - Use the RTX 5090 startup command (above) which auto-upgrades PyTorch
+   - Use the RTX 5090 startup command (above) which auto-upgrades PyTorch to 2.8.0+ with CUDA 12.8+
    - Or manually upgrade if pod is already running:
    ```bash
-   pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu121
+   # RTX 5090 requires PyTorch 2.8.0+ with CUDA 12.8+ (cu128)
+   pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
    pip install -r requirements.txt  # Reinstall to ensure compatibility
    ```
    
@@ -332,46 +339,83 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 
 **Error**: `CUDA error: no kernel image is available for execution on the device`
 
-**Cause**: PyTorch was not compiled for your GPU's compute capability. RTX 5090 requires PyTorch 2.8+ with CUDA 12.1+ support.
+**Cause**: PyTorch was not compiled for your GPU's compute capability. RTX 5090 requires PyTorch 2.8.0+ with CUDA 12.8+ support (compute capability sm_120). Versions 2.5.1, 2.6.x, and 2.7.x do NOT support RTX 5090.
 
-**Solution**:
-1. **Check current PyTorch version**:
+**Solution - Step-by-Step Upgrade Guide**:
+
+1. **Check current PyTorch version and CUDA support**:
    ```bash
-   python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.version.cuda}')"
+   python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.version.cuda}, Available: {torch.cuda.is_available()}')"
    ```
+   
+   **Expected output for RTX 5090**: Should show PyTorch 2.8.0+ and CUDA 12.8+ (or 12.9+)
 
-2. **Upgrade PyTorch to 2.8.0+** (required for RTX 5090 - sm_120 support):
+2. **Upgrade PyTorch to 2.8.0+ with CUDA 12.8** (Recommended - Nightly Build):
    ```bash
    # CUDA 12.8 nightly builds are confirmed to work with RTX 5090 (recommended)
    pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
    ```
    
-   **Important**: 
-   - PyTorch 2.5.1 and earlier do NOT support RTX 5090
-   - CUDA 12.8 nightly builds (cu128) are confirmed to support RTX 5090
-   - If nightly doesn't work, try CUDA 12.9 stable build (see below)
+   **Why CUDA 12.8 nightly?**
+   - RTX 5090 (sm_120) requires PyTorch 2.8.0+ with CUDA 12.8+ support
+   - CUDA 12.8 nightly builds (cu128) are confirmed to work with RTX 5090
+   - Nightly builds include the latest fixes and optimizations
 
-3. **Verify compatibility**:
+3. **Verify installation and GPU compatibility**:
    ```bash
-   python -c "import torch; x = torch.zeros(1).cuda(); print('CUDA test passed:', x.device)"
+   # Check PyTorch version and CUDA version
+   python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.version.cuda}')"
+   
+   # Test CUDA tensor operations
+   python -c "import torch; x = torch.zeros(1).cuda(); print('CUDA test passed:', x.device, 'GPU:', torch.cuda.get_device_name(0))"
    ```
+   
+   **Expected output**: Should show `cuda:0` and your RTX 5090 GPU name without errors
 
-4. **If cu128 nightly doesn't work**, try CUDA 12.9 stable build:
+4. **If CUDA 12.8 nightly doesn't work**, try CUDA 12.9 stable build:
    ```bash
    # Fallback: Try CUDA 12.9 stable build
    pip install --upgrade 'torch>=2.8.0' 'torchvision>=0.23.0' --index-url https://download.pytorch.org/whl/cu129
    ```
-
-5. **If still failing**, try uninstall and reinstall:
-   ```bash
-   # Uninstall and reinstall with CUDA 12.8 nightly (recommended)
-   pip uninstall torch torchvision -y
-   pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
-   ```
    
-   **Note**: RTX 5090 (sm_120) requires PyTorch 2.8.0 or higher. Versions 2.5.1, 2.6.x, and 2.7.x do NOT support RTX 5090. CUDA 12.8 nightly builds (cu128) are confirmed to work with RTX 5090.
+   **CUDA 12.8 vs 12.9**:
+   - **CUDA 12.8 (nightly)**: Recommended, confirmed to work with RTX 5090
+   - **CUDA 12.9 (stable)**: Alternative if nightly has issues, also supports RTX 5090
+   - Both require PyTorch 2.8.0+
 
-**Important**: After upgrading PyTorch, restart the training job. The server doesn't need to be restarted, but the training process does.
+5. **If still failing**, perform clean uninstall and reinstall:
+   ```bash
+   # Uninstall existing PyTorch
+   pip uninstall torch torchvision torchaudio -y
+   
+   # Clear pip cache (optional but recommended)
+   pip cache purge
+   
+   # Reinstall with CUDA 12.8 nightly (recommended)
+   pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
+   
+   # Verify installation
+   python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.version.cuda}'); x = torch.zeros(1).cuda(); print('CUDA test passed')"
+   ```
+
+6. **Reinstall other dependencies** (if needed):
+   ```bash
+   # Reinstall requirements to ensure compatibility
+   pip install -r requirements.txt
+   ```
+
+**Important Notes**:
+- **Backward Compatibility**: PyTorch 2.8.0+ with CUDA 12.8+ is backward compatible with older GPUs (RTX 3090, A10G, RTX 4090). You can use the same installation on all GPUs.
+- **After upgrading PyTorch**: Restart the training job. The server doesn't need to be restarted, but the training process does.
+- **Version Requirements**: RTX 5090 (sm_120) requires PyTorch 2.8.0 or higher. Versions 2.5.1, 2.6.x, and 2.7.x do NOT support RTX 5090.
+- **CUDA Driver**: Ensure your NVIDIA driver supports CUDA 12.8+. Check with `nvidia-smi` - driver version 550.54.15+ is recommended.
+
+**Troubleshooting Common Issues**:
+
+- **"No module named 'torch'" after upgrade**: Restart Python process or pod
+- **"CUDA out of memory"**: This is different from compatibility error - reduce batch size
+- **"CUDA driver version is insufficient"**: Update NVIDIA drivers to 550.54.15+
+- **Dependency conflicts**: Use `pip install --upgrade --force-reinstall` if needed
 
 ### Container Stuck in Restart Loop
 
@@ -471,6 +515,40 @@ uvicorn src.api.server:app --host 0.0.0.0 --port 8000
 1. Check server is running: `ps aux | grep uvicorn`
 2. Verify port 8000 is exposed in pod settings
 3. Try different network/VPN
+
+### Training Fails - "Input type (float) and bias type (c10::Half) should be the same"
+
+**Error**: `Training failed: Input type (float) and bias type (c10::Half) should be the same`
+
+**Cause**: This is a dtype mismatch error. The model weights are in float16 (half precision) but input tensors are in float32. This commonly occurs after upgrading PyTorch to 2.8.0+ if PyTorch and torchvision weren't upgraded together, or if the training code doesn't properly handle dtype conversion.
+
+**Solution**:
+
+1. **Ensure PyTorch and torchvision are upgraded together** (most common fix):
+   ```bash
+   # Uninstall and reinstall PyTorch/torchvision together
+   pip uninstall torch torchvision -y
+   pip install torch>=2.8.0 torchvision>=0.23.0
+   pip install -r requirements.txt  # Reinstall other dependencies
+   ```
+
+2. **If using RTX 4090/3090/A10G**, ensure you used the updated startup command that upgrades PyTorch before installing dependencies.
+
+3. **If the error persists**, the training code may need to be updated to ensure input tensors match model dtype:
+   - Check that inputs are converted to the same dtype as the model (typically float16)
+   - Ensure VAE encoding outputs match UNet dtype
+   - Verify mixed precision training is configured correctly
+
+4. **Temporary workaround** (if code fix isn't available):
+   ```bash
+   # Force reinstall with compatible versions
+   pip uninstall torch torchvision -y
+   pip cache purge
+   pip install torch==2.8.0 torchvision==0.23.0
+   pip install -r requirements.txt --force-reinstall
+   ```
+
+**Note**: This error typically indicates a version mismatch between PyTorch and torchvision, or a bug in the training code's dtype handling. The updated startup commands ensure PyTorch/torchvision are upgraded together to prevent this issue.
 
 ### Training Fails - "Insufficient image pairs"
 

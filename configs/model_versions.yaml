@@ -4,7 +4,7 @@ models:
     version: "1.0"
     last_updated: "2024-12-03"
     api_version: "0.30.0+"
-    pytorch_version: ">=2.5.1"
+    pytorch_version: ">=2.8.0"
     transformers_version: ">=4.56.0"
     sha256_checksum: ""  # To be filled after download
   
@@ -22,7 +22,7 @@ models:
     version: "1.0"
     last_updated: "2024-12-03"
     api_version: "0.30.0+"
-    pytorch_version: ">=2.5.1"
+    pytorch_version: ">=2.8.0"
     transformers_version: ">=4.56.0"
   
   controlnet_depth:
@@ -30,7 +30,7 @@ models:
     version: "1.0"
     last_updated: "2024-12-03"
     api_version: "0.30.0+"
-    pytorch_version: ">=2.5.1"
+    pytorch_version: ">=2.8.0"
     transformers_version: ">=4.56.0"
   
   controlnet_canny:
@@ -38,7 +38,7 @@ models:
     version: "1.0"
     last_updated: "2024-12-03"
     api_version: "0.30.0+"
-    pytorch_version: ">=2.5.1"
+    pytorch_version: ">=2.8.0"
     transformers_version: ">=4.56.0"
   
   lora_style:

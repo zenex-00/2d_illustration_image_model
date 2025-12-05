@@ -313,14 +313,14 @@ Each phase can run independently, allowing for:
 ### Software Requirements
 
 - **Python**: 3.8 or higher
-- **CUDA**: 11.8+ (for GPU acceleration)
+- **CUDA**: 12.8+ (for RTX 5090), 11.8+ (for older GPUs like RTX 3090, A10G, RTX 4090)
 - **Operating System**: Linux, macOS, or Windows
 - **VTracer Binary**: Required for Phase IV (must be in PATH or specified in config)
 
 ### Dependencies
 
 **Core ML Libraries**:
-- PyTorch 2.5.1+
+- PyTorch 2.8.0+
 - Transformers 4.56.2+
 - Diffusers 0.30.0+
 - Accelerate 0.33.0+

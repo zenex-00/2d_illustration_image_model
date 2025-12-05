@@ -1,10 +1,14 @@
 # Core ML Libraries
-# Note: torch 2.1.0+ required for CUDA support, 2.8+ for RTX 5090
-torch>=2.1.0,<2.9.0
-torchvision>=0.16.0,<0.19.0
-transformers>=4.41.2,<5.0.0
-diffusers>=0.30.0,<0.36.0
-accelerate>=0.31.0,<1.0.0
+# PyTorch 2.8.0+ required for RTX 5090 (compute capability sm_120) support
+# For RTX 5090: Install from nightly index with CUDA 12.8+:
+#   pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
+# For other GPUs (RTX 3090, A10G, RTX 4090): Standard PyPI installation works
+# PyTorch 2.8.0+ is backward compatible with older GPUs
+torch>=2.8.0
+torchvision>=0.23.0
+transformers>=4.56.2
+diffusers>=0.30.0
+accelerate>=0.33.0
 
 # Computer Vision
 opencv-python>=4.8.0
@@ -16,20 +20,16 @@ segment-anything>=1.0
 groundingdino-py>=0.4.0
 
 # LaMa Inpainting
-# IMPORTANT: lama-cleaner requires diffusers==0.16.1 which conflicts with our requirement of diffusers>=0.30.0
-# Install separately with: pip install --no-deps lama-cleaner>=1.2.0
-# Then install its dependencies manually if needed (most are already installed)
-# lama-cleaner>=1.2.0  # DO NOT install via pip - see setup instructions
+lama-cleaner>=1.2.0
 
 # ControlNet
-controlnet-aux>=0.0.10,<0.1.0
+controlnet-aux>=0.0.10
 
 # Background Removal
 rembg>=2.0.50
 
 # Depth Estimation
-# Note: ZoeDepth is installed manually via git clone (see setup scripts)
-# It doesn't have setup.py, so we add it to PYTHONPATH instead
+zoedepth>=0.1.0
 
 # Upscaling
 basicsr>=1.4.2
@@ -40,7 +40,7 @@ svgpathtools>=1.4.4
 shapely>=2.0.0
 
 # Utilities
-numpy>=1.24.0,<2.0.0
+numpy>=1.24.0
 scipy>=1.11.0
 pyyaml>=6.0.1
 python-dotenv>=1.0.0
@@ -67,18 +67,18 @@ slowapi>=0.1.9
 jinja2>=3.1.2
 
 # Color Science (optional, for exact CIEDE2000)
-colorspacious>=1.1.2,<2.0.0
+colorspacious>=2.0.0
 
 # GPU-accelerated computer vision
 kornia>=0.7.0
 
 # LoRA Training
-peft>=0.13.0,<1.0.0
+peft>=0.13.0
 albumentations>=1.3.0
 
 # Memory Optimization (optional but recommended)
-xformers>=0.0.23; sys_platform != "win32"
-bitsandbytes>=0.43.0; sys_platform != "win32"
+xformers>=0.0.23
+bitsandbytes>=0.43.0
 
 # Monitoring (optional)
 prometheus-client>=0.18.0
@@ -86,18 +86,3 @@ prometheus-client>=0.18.0
 # HTTP requests (for model downloads)
 requests>=2.31.0
 
-# LaMa Cleaner dependencies (needed when installing lama-cleaner with --no-deps)
-# Most of these are already in requirements above, but listed for completeness
-# flask==2.2.3  # Only needed for lama-cleaner web interface, not core functionality
-# flask-socketio  # Only needed for lama-cleaner web interface
-# simple-websocket  # Only needed for lama-cleaner web interface
-# flask-cors  # Only needed for lama-cleaner web interface
-# flaskwebgui==0.3.5  # Only needed for lama-cleaner web interface
-# pydantic  # Already compatible with our FastAPI
-# rich  # Logging utility
-# loguru  # Alternative logger (optional)
-# yacs  # Config management
-# gradio  # UI library (optional, not used in our pipeline)
-# piexif==1.1.3  # EXIF metadata (optional)
-# safetensors  # Already required by diffusers
-# omegaconf  # Config management (alternative to yacs)
