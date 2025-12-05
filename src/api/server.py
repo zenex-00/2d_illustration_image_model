@@ -21,6 +21,7 @@ from src.api.schemas import (
 from src.pipeline.orchestrator import Gemini3Pipeline
 from src.utils.logger import get_logger, setup_logging
 from src.api.job_queue import JobQueue, Job
+from src.api import training_jobs
 
 # Setup logging
 setup_logging()
@@ -38,6 +39,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Include routers
+app.include_router(training_jobs.router)
 
 # CORS configuration
 origins = os.getenv("CORS_ORIGINS", "*").split(",")
