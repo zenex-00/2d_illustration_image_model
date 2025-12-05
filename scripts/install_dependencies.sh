@@ -13,13 +13,14 @@ echo "=========================================="
 echo "[1/5] Upgrading pip..."
 pip install --upgrade pip
 
-# Install main requirements (excluding lama-cleaner to avoid conflict)
+# Filter requirements first to remove packages that cause conflicts or aren't on PyPI
+echo "Filtering requirements..."
+grep -v "lama-cleaner" requirements.txt | grep -v "zoedepth" > /tmp/requirements_filtered.txt
+
+# Install main requirements (excluding conflicts)
 echo "[2/5] Installing main requirements..."
-pip install -r requirements.txt || {
-    echo "Warning: Some requirements failed, attempting workaround..."
-    
-    grep -v "lama-cleaner" requirements.txt | grep -v "zoedepth" > /tmp/requirements_filtered.txt
-    pip install -r /tmp/requirements_filtered.txt
+pip install -r /tmp/requirements_filtered.txt || {
+    echo "Warning: Main requirements installation had issues, but continuing..."
 }
 
 # Install lama-cleaner without its dependencies to avoid diffusers version conflict

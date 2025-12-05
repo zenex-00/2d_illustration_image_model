@@ -63,7 +63,11 @@ def download_huggingface_model(model_id: str, output_dir: Path, token: str = Non
         logger.info("huggingface_model_downloaded", model_id=model_id)
         return True
     except Exception as e:
-        logger.error("huggingface_download_failed", model_id=model_id, error=str(e))
+        error_msg = str(e)
+        if "Disk quota exceeded" in error_msg or "No space left" in error_msg:
+            logger.critical("disk_space_error", model_id=model_id, error="CRITICAL: RunPod volume is full. You must delete unused models or increase volume size.")
+        else:
+            logger.error("huggingface_download_failed", model_id=model_id, error=error_msg)
         return False
 
 

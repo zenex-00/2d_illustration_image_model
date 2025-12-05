@@ -28,6 +28,7 @@ class Job:
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    progress: int = 0
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -63,7 +64,8 @@ class JobQueue:
             job_id=job_id,
             status=JobStatus.PENDING,
             created_at=datetime.utcnow(),
-            metadata=metadata or {}
+            metadata=metadata or {},
+            progress=0
         )
         
         self.jobs[job_id] = job
@@ -79,6 +81,7 @@ class JobQueue:
         """Get job by ID"""
         return self.jobs.get(job_id)
     
+    # Kept for backward compatibility if needed, but update_job is preferred
     def update_job_status(
         self,
         job_id: str,
@@ -86,29 +89,46 @@ class JobQueue:
         result: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None
     ) -> bool:
+        return self.update_job(job_id, status=status, result=result, error=error)
+
+    def update_job(
+        self,
+        job_id: str,
+        status: Optional[str] = None,
+        progress: Optional[int] = None,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None
+    ) -> bool:
         """
-        Update job status
+        Update job details (flexible update)
         
         Args:
             job_id: Job ID
-            status: New status
+            status: New status (string or Enum)
+            progress: New progress (0-100)
             result: Optional result data
             error: Optional error message
-        
-        Returns:
-            True if job was updated, False if not found
         """
         job = self.jobs.get(job_id)
         if not job:
             logger.warning("job_not_found", job_id=job_id)
             return False
         
-        job.status = status
+        if status:
+            # Handle string input for status
+            # If it's a string that matches our Enum values, use it.
+            # If it's already an Enum, use it.
+            job.status = status
+            
+            if status == JobStatus.PROCESSING or status == "processing":
+                if not job.started_at:
+                    job.started_at = datetime.utcnow()
+            elif status in (JobStatus.COMPLETED, JobStatus.FAILED) or status in ("completed", "failed"):
+                if not job.completed_at:
+                    job.completed_at = datetime.utcnow()
         
-        if status == JobStatus.PROCESSING:
-            job.started_at = datetime.utcnow()
-        elif status in (JobStatus.COMPLETED, JobStatus.FAILED):
-            job.completed_at = datetime.utcnow()
+        if progress is not None:
+            job.progress = progress
         
         if result is not None:
             job.result = result
@@ -116,7 +136,7 @@ class JobQueue:
         if error is not None:
             job.error = error
         
-        logger.info("job_status_updated", job_id=job_id, status=status.value)
+        logger.info("job_updated", job_id=job_id, status=str(status), progress=progress)
         return True
     
     def _cleanup_old_jobs(self):
