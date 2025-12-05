@@ -49,17 +49,25 @@ class JobQueue:
         self._lock = threading.Lock()
         logger.info("job_queue_initialized", max_jobs=max_jobs)
     
-    def create_job(self, metadata: Optional[Dict[str, Any]] = None) -> str:
+    def create_job(self, job_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
         """
         Create a new job
         
         Args:
+            job_id: Optional specific Job ID (generated if None)
             metadata: Optional job metadata
         
         Returns:
             Job ID
         """
-        job_id = str(uuid.uuid4())
+        if job_id is None:
+            job_id = str(uuid.uuid4())
+            
+        # Handle case where job_id was passed as first arg but might be dict (legacy compat check not strictly needed if valid types used)
+        if isinstance(job_id, dict) and metadata is None:
+             metadata = job_id
+             job_id = str(uuid.uuid4())
+
         job = Job(
             job_id=job_id,
             status=JobStatus.PENDING,
