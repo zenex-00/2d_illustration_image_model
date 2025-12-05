@@ -5,9 +5,10 @@ import logging
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request, Depends
-from fastapi.responses import JSONResponse, Response, FileResponse, RedirectResponse
+from fastapi.responses import JSONResponse, Response, FileResponse, RedirectResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
 from src.api.schemas import (
@@ -71,15 +72,18 @@ async def startup_event():
     logger.info("server_starting")
     # We delay pipeline loading until first request to speed up container start
 
+# Initialize templates
+templates = Jinja2Templates(directory="templates")
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Server shutdown event"""
     logger.info("server_shutdown")
 
-@app.get("/", include_in_schema=False)
-async def root():
-    """Redirect root to docs"""
-    return RedirectResponse(url="/docs")
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    """Serve the main UI page (Home)"""
+    return templates.TemplateResponse("home.html", {"request": request})
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
