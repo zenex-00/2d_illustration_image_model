@@ -434,6 +434,40 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 - **"CUDA driver version is insufficient"**: Update NVIDIA drivers to 550.54.15+
 - **Dependency conflicts**: Use `pip install --upgrade --force-reinstall` if needed
 
+### Torchvision Compatibility Error
+
+**Error**: `RuntimeError: operator torchvision::nms does not exist` or `ModuleNotFoundError: Could not import module 'CLIPImageProcessor'`
+
+**Cause**: PyTorch and torchvision versions are mismatched. This happens when torchvision is installed from requirements.txt after PyTorch is upgraded, causing a version mismatch.
+
+**Solution**:
+
+1. **Ensure PyTorch and torchvision are upgraded together** (most important):
+   ```bash
+   # For RTX 5090 with CUDA 12.8:
+   pip uninstall torch torchvision torchaudio -y
+   pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
+   
+   # For other GPUs:
+   pip uninstall torch torchvision torchaudio -y
+   pip install --upgrade torch>=2.8.0 torchvision>=0.23.0
+   ```
+
+2. **Verify versions match**:
+   ```bash
+   python -c "import torch; import torchvision; print(f'PyTorch: {torch.__version__}, Torchvision: {torchvision.__version__}')"
+   ```
+   
+   Both should be from the same CUDA build (e.g., both cu128 or both cu118).
+
+3. **If error persists**, reinstall requirements (excluding torch/torchvision):
+   ```bash
+   # The install_dependencies.sh script now excludes torch/torchvision to prevent conflicts
+   bash scripts/install_dependencies.sh
+   ```
+
+**Prevention**: The startup commands now upgrade PyTorch and torchvision together before running install_dependencies.sh, and the install script excludes torch/torchvision from requirements.txt to prevent conflicts.
+
 ### Xformers Import Error (Fixed)
 
 **Error**: `RuntimeError: Failed to import diffusers.loaders.ip_adapter because of the following error: /opt/conda/lib/python3.10/site-packages/xformers/flash_attn_3/_C.so: undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib`
@@ -611,9 +645,16 @@ python scripts/setup_model_volume.py --volume-path /models
 
 ### Disk Quota Exceeded
 
-**Error**: `OSError: [Errno 122] Disk quota exceeded`
+**Error**: `OSError: [Errno 122] Disk quota exceeded` or `CRITICAL: RunPod volume is full. You must delete unused models or increase volume size.`
 
-**Cause**: RunPod volume or container disk is full. Models require ~20-30GB of space.
+**Cause**: RunPod volume or container disk is full. Models require ~27-30GB of space:
+- SDXL base model: ~14 GB
+- ControlNet Depth: ~2.5 GB
+- ControlNet Canny: ~2.5 GB
+- GroundingDINO: ~2.7 GB
+- SAM: ~2.6 GB
+- RealESRGAN: ~200 MB
+- **Total: ~27 GB** (plus cache and temporary files)
 
 **Solutions**:
 
@@ -621,17 +662,21 @@ python scripts/setup_model_volume.py --volume-path /models
    ```bash
    df -h
    du -sh /models
+   du -sh /models/*  # Check individual model sizes
    ```
 
-2. **Increase Volume Size** (if using persistent volume):
+2. **Increase Volume Size** (if using persistent volume - RECOMMENDED):
    - RunPod Dashboard → Volumes → Your Volume
    - Click **Resize**
-   - Increase to at least 50GB (recommended: 100GB)
+   - **Minimum: 50GB** (but you'll have no space for training data)
+   - **Recommended: 100GB** (leaves ~23GB for training data and cache)
+   - **For training: 150GB+** (if you plan to store training data on volume)
 
 3. **Clean Up Unnecessary Files**:
    ```bash
    # Remove old model downloads if any
    rm -rf /models/*.tmp
+   rm -rf /models/.cache
    # Clear pip cache
    pip cache purge
    # Clear system package cache
@@ -641,6 +686,15 @@ python scripts/setup_model_volume.py --volume-path /models
 4. **Use Larger Container Disk**:
    - When creating pod, increase Container Disk size
    - Minimum: 50GB, Recommended: 100GB
+   - Note: Container disk is ephemeral (lost on restart), use volume for persistence
+
+5. **Delete Unused Models** (if you don't need all models):
+   ```bash
+   # List model sizes
+   du -sh /models/*
+   # Delete specific models you don't need (e.g., if you don't use RealESRGAN)
+   rm -rf /models/realesrgan
+   ```
 
 ### Missing loguru Dependency
 

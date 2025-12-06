@@ -14,10 +14,11 @@ echo "[1/5] Upgrading pip..."
 pip install --upgrade pip
 
 # Filter requirements first to remove packages that cause conflicts or aren't on PyPI
+# Also exclude torch and torchvision since they should be upgraded separately to ensure compatibility
 echo "Filtering requirements..."
-grep -v "lama-cleaner" requirements.txt | grep -v "zoedepth" | grep -v "^xformers" > /tmp/requirements_filtered.txt
+grep -v "lama-cleaner" requirements.txt | grep -v "zoedepth" | grep -v "^xformers" | grep -v "^torch" | grep -v "^torchvision" > /tmp/requirements_filtered.txt
 
-# Install main requirements (excluding conflicts)
+# Install main requirements (excluding conflicts and PyTorch packages)
 echo "[2/5] Installing main requirements..."
 pip install -r /tmp/requirements_filtered.txt || {
     echo "Warning: Main requirements installation had issues, but continuing..."
@@ -60,6 +61,8 @@ fi
 # Verify critical packages
 echo "[5/5] Verifying installation..."
 python -c "import torch; print(f'PyTorch: {torch.__version__}')"
+python -c "import torchvision; print(f'Torchvision: {torchvision.__version__}')"
+python -c "import torch; import torchvision; assert torch.__version__.split('+')[0] == torchvision.__version__.split('+')[0] or '+' in torch.__version__, 'WARNING: PyTorch and torchvision versions may be mismatched'; print('PyTorch/torchvision compatibility check passed')"
 python -c "import diffusers; print(f'Diffusers: {diffusers.__version__}')"
 python -c "import transformers; print(f'Transformers: {transformers.__version__}')"
 python -c "import cv2; print(f'OpenCV: {cv2.__version__}')"
