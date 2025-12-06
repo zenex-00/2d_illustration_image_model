@@ -1,1 +1,288 @@
+import os
+import time
+import uuid
+import logging
+from typing import Dict, Any, Optional, List
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request, Depends
+from fastapi.responses import JSONResponse, Response, FileResponse, RedirectResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
+
+from src.api.schemas import (
+    ProcessImageRequest, 
+    ProcessImageResponse, 
+    ErrorResponse, 
+    HealthResponse, 
+    ReadyResponse,
+    JobStatusResponse
+)
+from src.pipeline.orchestrator import Gemini3Pipeline
+from src.utils.logger import get_logger, setup_logging
+from src.api.job_queue import JobQueue, Job
+from src.api import training_jobs
+
+# Setup logging
+setup_logging()
+logger = get_logger(__name__)
+
+# Global state
+pipeline: Optional[Gemini3Pipeline] = None
+job_queue = JobQueue()
+
+# Initialize API
+app = FastAPI(
+    title="Gemini 3 Pro Vehicle-to-Vector API",
+    description="High-fidelity vector graphic generation pipeline",
+    version="3.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# Include routers
+app.include_router(training_jobs.router)
+
+# CORS configuration
+origins = os.getenv("CORS_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Constants
+API_OUTPUT_DIR = os.getenv("API_OUTPUT_DIR", "/tmp/gemini3_output")
+os.makedirs(API_OUTPUT_DIR, exist_ok=True)
+
+# Dependency for pipeline lazy loading
+def get_pipeline():
+    global pipeline
+    if pipeline is None:
+        logger.info("loading_pipeline")
+        pipeline = Gemini3Pipeline()
+    return pipeline
+
+@app.on_event("startup")
+async def startup_event():
+    """Server startup event"""
+    logger.info("server_starting")
+    # We delay pipeline loading until first request to speed up container start
+
+# Initialize templates
+templates = Jinja2Templates(directory="templates")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Server shutdown event"""
+    logger.info("server_shutdown")
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    """Serve the main UI page (Home)"""
+    return templates.TemplateResponse("home.html", {"request": request})
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Liveness probe"""
+    return HealthResponse(
+        status="healthy", 
+        version="3.0.0"
+    )
+
+@app.get("/ready", response_model=ReadyResponse)
+async def readiness_check():
+    """Readiness probe"""
+    checks = {
+        "disk_space": "sufficient", # Simplified check
+        "gpu": "available" if os.path.exists("/dev/nvidia0") else "unavailable"
+    }
+    
+    global pipeline
+    checks["model_cache"] = "ready" if pipeline else "lazy_loaded"
+    
+    return ReadyResponse(
+        status="ready",
+        checks=checks
+    )
+
+@app.post("/api/v1/process", response_model=JobStatusResponse)
+async def process_image_async(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    palette_hex_list: Optional[str] = Form(None), # Comma separated if passed as form
+    config_overrides: Optional[str] = Form(None)  # JSON string
+):
+    """
+    Submit an image processing job.
+    Returns immediately with a job ID.
+    """
+    job_id = str(uuid.uuid4())
+    logger.info("job_received", job_id=job_id, filename=file.filename)
+    
+    # Save input file
+    input_path = os.path.join(API_OUTPUT_DIR, f"{job_id}_input.png")
+    with open(input_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+        
+    # Create job
+    # Note: Using a simplified dictionary until we fix imports if needed
+    job_queue.create_job(job_id)
+    
+    # Process in background
+    background_tasks.add_task(
+        run_pipeline_task, 
+        job_id, 
+        input_path, 
+        palette_hex_list,
+        config_overrides
+    )
+    
+    return JobStatusResponse(
+        job_id=job_id,
+        status="pending",
+        created_at=time.time(), # Simplified timestamp
+        updated_at=time.time()
+    )
+
+@app.get("/api/v1/jobs/{job_id}", response_model=JobStatusResponse)
+async def get_job_status(job_id: str):
+    """Get job status"""
+    job = job_queue.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    return JobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        progress=job.progress,
+        result_url=f"/api/v1/results/{job_id}" if job.status == "completed" else None,
+        error=job.error,
+        created_at=job.created_at,
+        updated_at=job.updated_at
+    )
+
+@app.get("/api/v1/results/{job_id}")
+async def get_job_result(job_id: str):
+    """Download job result (SVG)"""
+    # Simply looking for the SVG file
+    svg_path = os.path.join(API_OUTPUT_DIR, f"{job_id}.svg")
+    if not os.path.exists(svg_path):
+         raise HTTPException(status_code=404, detail="Result not found")
+         
+    return FileResponse(svg_path, media_type="image/svg+xml", filename=f"vector_{job_id}.svg")
+
+def run_pipeline_task(job_id: str, input_path: str, palette: Any, config: Any):
+    """Background task wrapper"""
+    try:
+        job_queue.update_job(job_id, status="processing", progress=10)
+        
+        # Load pipeline
+        pipe = get_pipeline()
+        
+        output_svg = os.path.join(API_OUTPUT_DIR, f"{job_id}.svg")
+        output_png = os.path.join(API_OUTPUT_DIR, f"{job_id}_preview.png")
+        
+        # Parse optional args
+        # (Handling logic for palette/config parsing would go here)
+        
+        svg_xml, metadata = pipe.process_image(
+            input_image_path=input_path,
+            output_svg_path=output_svg,
+            output_png_path=output_png
+        )
+        
+        job_queue.update_job(job_id, status="completed", progress=100)
+        
+    except Exception as e:
+        logger.error("job_failed", job_id=job_id, error=str(e), exc_info=True)
+        job_queue.update_job(job_id, status="failed", error=str(e))
+
+
+# UI Mounts (if templates exist)
+if os.path.exists("templates"):
+    from fastapi.templating import Jinja2Templates
+    templates = Jinja2Templates(directory="templates")
+    
+    @app.get("/ui/training", response_class=HTMLResponse)
+    async def ui_training(request: Request):
+        return templates.TemplateResponse("training.html", {"request": request})
+
+    @app.get("/ui/inference", response_class=HTMLResponse)
+    async def ui_inference(request: Request):
+        return templates.TemplateResponse("inference.html", {"request": request})
+
+    @app.get("/ui/training/jobs/{job_id}", response_class=HTMLResponse)
+    async def ui_training_job(request: Request, job_id: str):
+        job = job_queue.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return templates.TemplateResponse("training_job.html", {"request": request, "job": job})
+
+    @app.get("/ui/inference/jobs/{job_id}", response_class=HTMLResponse)
+    async def ui_inference_job(request: Request, job_id: str):
+        job = job_queue.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return templates.TemplateResponse("inference_job.html", {"request": request, "job": job})
+
+    @app.post("/ui/inference", response_class=RedirectResponse)
+    async def ui_inference_post(
+        background_tasks: BackgroundTasks,
+        file: UploadFile = File(...),
+        palette_hex_list: Optional[str] = Form(None),
+        request: Request = None
+    ):
+        """Handle inference form submission"""
+        job_id = str(uuid.uuid4())
+        logger.info("ui_inference_submitted", job_id=job_id)
+        
+        # Save input file
+        input_path = os.path.join(API_OUTPUT_DIR, f"{job_id}_input.png")
+        with open(input_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+            
+        # Create job
+        job_queue.create_job(job_id)
+        
+        # Process in background
+        background_tasks.add_task(
+            run_pipeline_task, 
+            job_id, 
+            input_path, 
+            palette_hex_list,
+            None # config overrides
+        )
+        
+        return RedirectResponse(url=f"/ui/inference/jobs/{job_id}", status_code=303)
+
+    @app.post("/ui/training", response_class=RedirectResponse)
+    async def ui_training_post(
+        background_tasks: BackgroundTasks,
+        input_files: List[UploadFile] = File(...),
+        target_files: List[UploadFile] = File(...),
+        learning_rate: float = Form(...),
+        batch_size: int = Form(...),
+        num_epochs: int = Form(...),
+        rank: int = Form(...),
+        alpha: int = Form(...),
+        validation_split: float = Form(...),
+        seed: int = Form(...),
+        request: Request = None
+    ):
+        """Handle training form submission (Mock implementation)"""
+        job_id = str(uuid.uuid4())
+        logger.info("ui_training_submitted", job_id=job_id, num_inputs=len(input_files))
+        
+        # In a real impl, we would save files and start training
+        # For now, just create a job record so the UI doesn't 404
+        job_queue.create_job(job_id)
+        job_queue.update_job(job_id, status="pending", progress=0)
+        
+        return RedirectResponse(url=f"/ui/training/jobs/{job_id}", status_code=303)
 
