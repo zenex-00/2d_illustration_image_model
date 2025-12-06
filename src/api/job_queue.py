@@ -31,6 +31,13 @@ class Job:
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    progress: float = 0.0
+    current_epoch: int = 0
+    total_epochs: int = 0
+    train_loss: Optional[float] = None
+    val_loss: Optional[float] = None
+    artifacts: Dict[str, Any] = field(default_factory=dict)
+    logs: list = field(default_factory=list)
 
 
 class JobQueue:

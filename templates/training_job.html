@@ -19,8 +19,8 @@
     <div id="loading-spinner" class="htmx-indicator loading-spinner"></div>
     <div id="job-status">
         <span class="status-badge status-{{ job.status }}">{{ job.status }}</span>
-        <span>Progress: {{ job.progress }}%</span>
-        {% if job.current_epoch > 0 %}
+        <span>Progress: {{ job.progress|default(0) }}%</span>
+        {% if job.current_epoch|default(0) > 0 %}
         <span>Epoch: {{ job.current_epoch }}/{{ job.total_epochs }}</span>
         {% endif %}
         {% if job.train_loss %}
@@ -32,7 +32,7 @@
     </div>
     
     <div class="log-container">
-        {% for log in logs %}
+        {% for log in job.logs|default([]) %}
         <div class="log-line">{{ log|e }}</div>
         {% endfor %}
     </div>
@@ -41,7 +41,7 @@
 {% if job.status == 'completed' %}
 <div class="alert alert-success">
     <h3>Training Completed!</h3>
-    {% if job.artifacts.weights %}
+    {% if job.artifacts and job.artifacts.weights %}
     <p>Weights saved to: <code>{{ job.artifacts.weights|e }}</code></p>
     {% endif %}
 </div>
@@ -56,15 +56,19 @@
 
 <div class="card">
     <h3>Training Parameters</h3>
+    {% if job.metadata %}
     <ul>
-        <li>Learning Rate: {{ job.params.learning_rate }}</li>
-        <li>Batch Size: {{ job.params.batch_size }}</li>
-        <li>Epochs: {{ job.params.num_epochs }}</li>
-        <li>LoRA Rank: {{ job.params.rank }}</li>
-        <li>LoRA Alpha: {{ job.params.alpha }}</li>
-        <li>Validation Split: {{ job.params.validation_split }}</li>
-        <li>Seed: {{ job.params.seed }}</li>
+        <li>Learning Rate: {{ job.metadata.get('learning_rate', 'N/A') }}</li>
+        <li>Batch Size: {{ job.metadata.get('batch_size', 'N/A') }}</li>
+        <li>Epochs: {{ job.metadata.get('num_epochs', 'N/A') }}</li>
+        <li>LoRA Rank: {{ job.metadata.get('rank', 'N/A') }}</li>
+        <li>LoRA Alpha: {{ job.metadata.get('alpha', 'N/A') }}</li>
+        <li>Validation Split: {{ job.metadata.get('validation_split', 'N/A') }}</li>
+        <li>Seed: {{ job.metadata.get('seed', 'N/A') }}</li>
     </ul>
+    {% else %}
+    <p>No training parameters available</p>
+    {% endif %}
 </div>
 
 <a href="/ui/training">

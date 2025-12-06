@@ -7,8 +7,8 @@
      {% endif %}>
     <div id="job-status">
         <span class="status-badge status-{{ job.status }}">{{ job.status }}</span>
-        <span>Progress: {{ "%.1f"|format(job.progress) }}%</span>
-        {% if job.current_epoch > 0 %}
+        <span>Progress: {{ "%.1f"|format(job.progress|default(0)) }}%</span>
+        {% if job.current_epoch|default(0) > 0 %}
         <span>Epoch: {{ job.current_epoch }}/{{ job.total_epochs }}</span>
         {% endif %}
         {% if job.train_loss %}
@@ -19,7 +19,7 @@
         {% endif %}
     </div>
     <div class="log-container">
-        {% for log in logs %}
+        {% for log in job.logs|default([]) %}
         <div class="log-line">{{ log|e }}</div>
         {% endfor %}
     </div>
