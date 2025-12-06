@@ -1,8 +1,25 @@
 """Multi-ControlNet processing for SDXL"""
 
+import os
 import numpy as np
 import torch
 from typing import Optional, Tuple, List
+
+# Disable xformers if it's causing import issues (set before importing diffusers)
+# Check if already disabled (set by server.py or environment)
+if os.getenv("DISABLE_XFORMERS") != "1":
+    try:
+        import xformers
+        try:
+            from xformers.ops import fmha  # noqa: F401
+            os.environ.setdefault("XFORMERS_DISABLED", "0")
+        except Exception:
+            os.environ["XFORMERS_DISABLED"] = "1"
+            os.environ["DISABLE_XFORMERS"] = "1"
+    except Exception:
+        os.environ["XFORMERS_DISABLED"] = "1"
+        os.environ["DISABLE_XFORMERS"] = "1"
+
 from diffusers import ControlNetModel, UniPCMultistepScheduler
 from src.utils.logger import get_logger
 from src.utils.error_handler import retry_on_failure, ModelLoadError

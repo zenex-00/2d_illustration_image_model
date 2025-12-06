@@ -1,8 +1,26 @@
 """SDXL generator with ControlNet guidance and LoRA support"""
 
+import os
 import numpy as np
 import torch
 from typing import Optional, List, Tuple
+
+# Disable xformers if it's causing import issues (set before importing diffusers)
+# This prevents RuntimeError when xformers is installed but incompatible with PyTorch/CUDA
+# Check if already disabled (set by server.py or environment)
+if os.getenv("DISABLE_XFORMERS") != "1":
+    try:
+        import xformers
+        try:
+            from xformers.ops import fmha  # noqa: F401
+            os.environ.setdefault("XFORMERS_DISABLED", "0")
+        except Exception:
+            os.environ["XFORMERS_DISABLED"] = "1"
+            os.environ["DISABLE_XFORMERS"] = "1"
+    except Exception:
+        os.environ["XFORMERS_DISABLED"] = "1"
+        os.environ["DISABLE_XFORMERS"] = "1"
+
 from diffusers import (
     StableDiffusionXLControlNetPipeline,
     AutoencoderKL,

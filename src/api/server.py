@@ -4,6 +4,28 @@ import uuid
 import logging
 from typing import Dict, Any, Optional, List
 
+# Disable xformers early if it's causing import issues
+# This prevents RuntimeError when xformers is installed but incompatible with PyTorch/CUDA
+# The error manifests as: undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib
+if os.getenv("DISABLE_XFORMERS") != "1":
+    try:
+        # Try to import xformers - this may fail with ImportError or RuntimeError
+        # if the compiled extension is incompatible with the current PyTorch/CUDA version
+        import xformers
+        # If import succeeds, try to use a feature to verify it actually works
+        try:
+            # Try to access a module that would trigger the symbol loading
+            from xformers.ops import fmha  # noqa: F401
+            os.environ.setdefault("XFORMERS_DISABLED", "0")
+        except Exception:
+            # xformers is installed but incompatible (undefined symbol error)
+            os.environ["XFORMERS_DISABLED"] = "1"
+            os.environ["DISABLE_XFORMERS"] = "1"
+    except Exception:
+        # xformers is not available or incompatible, disable it
+        os.environ["XFORMERS_DISABLED"] = "1"
+        os.environ["DISABLE_XFORMERS"] = "1"
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.responses import JSONResponse, Response, FileResponse, RedirectResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +41,25 @@ from src.api.schemas import (
     ReadyResponse,
     JobStatusResponse
 )
-from src.pipeline.orchestrator import Gemini3Pipeline
+
+# Import orchestrator - this will trigger diffusers import which may fail if xformers is incompatible
+# We catch the error here to provide a helpful message
+try:
+    from src.pipeline.orchestrator import Gemini3Pipeline
+except RuntimeError as e:
+    error_str = str(e).lower()
+    if "xformers" in error_str or "flash_attn" in error_str or "undefined symbol" in error_str:
+        import sys
+        print("\n" + "="*60, file=sys.stderr)
+        print("ERROR: xformers is installed but incompatible with your PyTorch/CUDA version", file=sys.stderr)
+        print("="*60, file=sys.stderr)
+        print(f"\nError details: {e}", file=sys.stderr)
+        print("\nTo fix this, run:", file=sys.stderr)
+        print("  pip uninstall xformers", file=sys.stderr)
+        print("\nThe application will use PyTorch's built-in SDPA instead.", file=sys.stderr)
+        print("="*60 + "\n", file=sys.stderr)
+        sys.exit(1)
+    raise
 from src.utils.logger import get_logger, setup_logging
 from src.api.job_queue import JobQueue, Job
 from src.api import training_jobs

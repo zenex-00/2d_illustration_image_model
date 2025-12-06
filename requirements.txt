@@ -77,7 +77,8 @@ peft>=0.13.0
 albumentations>=1.3.0
 
 # Memory Optimization (optional but recommended)
-xformers>=0.0.23
+# xformers>=0.0.23  # Commented out - install separately if compatible with your PyTorch/CUDA version
+# To install xformers: pip install xformers>=0.0.23 (may fail if PyTorch/CUDA versions are incompatible)
 bitsandbytes>=0.43.0
 
 # Monitoring (optional)

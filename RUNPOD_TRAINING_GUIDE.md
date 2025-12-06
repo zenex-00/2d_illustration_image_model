@@ -61,7 +61,8 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    TRAIN_DATA_ROOT=/workspace/training_data
    TRAIN_OUTPUT_ROOT=/workspace/training_output
    ```
-6. **Ports**: Add port `8000` (TCP)
+6. **Ports**: Add port `5090` (TCP) for RTX 5090, or `8000` (TCP) for other GPUs
+   - **Note**: You can use any port you prefer. Just make sure the port in the startup command matches the port you configure here.
 7. **Startup Command** (replace `YOUR_GITHUB_URL`):
    
    **For RTX 3090/A10G/RTX 4090 (PyTorch 2.8.0+)**:
@@ -73,7 +74,7 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 5090 (PyTorch 2.8.0+ required - sm_120 support)**:
    ```bash
-   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 5090"
    ```
    
    **Note**: RTX 5090 requires PyTorch 2.8.0+ with CUDA 12.8+ support. CUDA 12.8 nightly builds (cu128) are confirmed to work with RTX 5090. If nightly fails, try cu129 stable builds (see troubleshooting section).
@@ -81,6 +82,8 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    **Important**: 
    - Replace `YOUR_GITHUB_URL` with your actual GitHub repository URL
    - RTX 5090 requires PyTorch 2.8+, so the RTX 5090 command upgrades PyTorch first
+   - The installation script automatically handles xformers compatibility - if xformers is incompatible with your PyTorch/CUDA version, it will be automatically disabled and PyTorch's built-in SDPA will be used instead
+   - Port 5090 is used for RTX 5090 in the example above - you can change it to any port you prefer, just make sure it matches the port you configure in step 6
 8. **Pod Name**: `gemini3-training`
 9. Click **Deploy**
 
@@ -158,19 +161,23 @@ export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
 python scripts/setup_model_volume.py --volume-path /models
 
 # 6. Start server
-uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+# For RTX 5090, use port 5090; for other GPUs, use port 8000 (or any port you configured)
+uvicorn src.api.server:app --host 0.0.0.0 --port 5090
 ```
 
 **Note**: Keep terminal open - server must keep running. Or run in background:
 ```bash
-nohup uvicorn src.api.server:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+# Replace 5090 with your configured port (8000 for other GPUs)
+nohup uvicorn src.api.server:app --host 0.0.0.0 --port 5090 > server.log 2>&1 &
 tail -f server.log  # View logs
 ```
 
 ### 2.3 Get Pod URL
 
 1. In pod page, find **HTTP Service** URL
-2. Format: `https://xxxxx-8000.proxy.runpod.net` or `http://xxx.xxx.xxx.xxx:8000`
+2. Format: 
+   - For port 5090: `https://xxxxx-5090.proxy.runpod.net` or `http://xxx.xxx.xxx.xxx:5090`
+   - For port 8000: `https://xxxxx-8000.proxy.runpod.net` or `http://xxx.xxx.xxx.xxx:8000`
 3. Test: Open `YOUR_POD_URL/health` in browser
 4. Should return: `{"status":"healthy",...}`
 
@@ -427,6 +434,29 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 - **"CUDA driver version is insufficient"**: Update NVIDIA drivers to 550.54.15+
 - **Dependency conflicts**: Use `pip install --upgrade --force-reinstall` if needed
 
+### Xformers Import Error (Fixed)
+
+**Error**: `RuntimeError: Failed to import diffusers.loaders.ip_adapter because of the following error: /opt/conda/lib/python3.10/site-packages/xformers/flash_attn_3/_C.so: undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib`
+
+**Cause**: xformers is installed but incompatible with your PyTorch/CUDA version. This is a common issue when PyTorch and xformers versions don't match.
+
+**Solution**: 
+- The installation script (`scripts/install_dependencies.sh`) now automatically detects and handles this issue
+- If xformers is incompatible, it will be automatically uninstalled
+- The application will use PyTorch's built-in SDPA (Scaled Dot Product Attention) instead, which works just as well
+- If you see this error during server startup, the code will now catch it and provide a helpful error message
+
+**Manual Fix** (if needed):
+```bash
+# Uninstall incompatible xformers
+pip uninstall xformers -y
+
+# Restart server - it will use PyTorch SDPA instead
+uvicorn src.api.server:app --host 0.0.0.0 --port 5090
+```
+
+**Note**: xformers is optional - the application works perfectly fine without it using PyTorch's built-in attention mechanisms.
+
 ### Container Stuck in Restart Loop
 
 **Symptoms**: Container shows "start container" repeatedly, keeps restarting, never fully starts.
@@ -510,8 +540,9 @@ From inference job page, click **"Download SVG"** and **"Download PNG"** buttons
 
 ```bash
 cd /workspace/image_generation
-export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
-uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
+# For RTX 5090, use port 5090; for other GPUs, use port 8000
+uvicorn src.api.server:app --host 0.0.0.0 --port 5090
 ```
 
 ### CUDA Out of Memory
@@ -523,7 +554,7 @@ uvicorn src.api.server:app --host 0.0.0.0 --port 8000
 ### Can't Access Web UI
 
 1. Check server is running: `ps aux | grep uvicorn`
-2. Verify port 8000 is exposed in pod settings
+2. Verify your configured port (5090 for RTX 5090, 8000 for others) is exposed in pod settings
 3. Try different network/VPN
 
 ### Training Fails - "Input type (float) and bias type (c10::Half) should be the same"
@@ -658,7 +689,8 @@ apt-get install -y libgl1-mesa-glx libglib2.0-0
 ```bash
 cd /workspace/image_generation
 export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
-uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+# For RTX 5090, use port 5090; for other GPUs, use port 8000
+uvicorn src.api.server:app --host 0.0.0.0 --port 5090
 ```
 
 **Note**: The installation script and startup commands now include this automatically. If you're using the manual setup, install these libraries first.
@@ -685,7 +717,8 @@ Then retry your command. To make it permanent for the session, add to your start
    # Install system libraries if missing
    apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0
    export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
-   uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+   # For RTX 5090, use port 5090; for other GPUs, use port 8000
+   uvicorn src.api.server:app --host 0.0.0.0 --port 5090
    ```
 
 **Note**: Data in `/workspace` is lost on restart, but `/models` volume persists.
@@ -776,11 +809,12 @@ find /workspace/training_output -name "*.safetensors"
 
 # Start server
 cd /workspace/image_generation
-export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
-uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
+# For RTX 5090, use port 5090; for other GPUs, use port 8000
+uvicorn src.api.server:app --host 0.0.0.0 --port 5090
 
 # Start server in background
-nohup uvicorn src.api.server:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+nohup uvicorn src.api.server:app --host 0.0.0.0 --port 5090 > server.log 2>&1 &
 tail -f server.log  # View logs
 ```
 

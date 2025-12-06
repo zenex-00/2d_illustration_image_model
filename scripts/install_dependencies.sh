@@ -13,25 +13,14 @@ echo "=========================================="
 echo "[1/5] Upgrading pip..."
 pip install --upgrade pip
 
-<<<<<<< HEAD
-# Install main requirements (excluding lama-cleaner to avoid conflict)
-echo "[2/5] Installing main requirements..."
-pip install -r requirements.txt || {
-    echo "Warning: Some requirements failed, attempting workaround..."
-    
-    # If requirements.txt fails due to lama-cleaner conflict, install without it
-    grep -v "lama-cleaner" requirements.txt > /tmp/requirements_no_lama.txt
-    pip install -r /tmp/requirements_no_lama.txt
-=======
 # Filter requirements first to remove packages that cause conflicts or aren't on PyPI
 echo "Filtering requirements..."
-grep -v "lama-cleaner" requirements.txt | grep -v "zoedepth" > /tmp/requirements_filtered.txt
+grep -v "lama-cleaner" requirements.txt | grep -v "zoedepth" | grep -v "^xformers" > /tmp/requirements_filtered.txt
 
 # Install main requirements (excluding conflicts)
 echo "[2/5] Installing main requirements..."
 pip install -r /tmp/requirements_filtered.txt || {
     echo "Warning: Main requirements installation had issues, but continuing..."
->>>>>>> 6349783a2da6a4161c8520eedba9af6b418ef242
 }
 
 # Install lama-cleaner without its dependencies to avoid diffusers version conflict
@@ -43,8 +32,6 @@ pip install --no-deps lama-cleaner>=1.2.0 || echo "Warning: lama-cleaner install
 echo "[4/5] Installing lama-cleaner dependencies..."
 pip install pydantic rich yacs omegaconf safetensors piexif loguru || true
 
-<<<<<<< HEAD
-=======
 # Install ZoeDepth manually since it's not on PyPI
 echo "[4.5/5] Installing ZoeDepth from GitHub..."
 if [ ! -d "ZoeDepth" ]; then
@@ -56,7 +43,20 @@ fi
 # Add ZoeDepth to PYTHONPATH in current session (user needs to add it to their env persistently)
 export PYTHONPATH=$PYTHONPATH:$(pwd)/ZoeDepth
 
->>>>>>> 6349783a2da6a4161c8520eedba9af6b418ef242
+# Try to install xformers (optional, may fail due to CUDA/PyTorch version mismatch)
+echo "[4.6/5] Attempting to install xformers (optional)..."
+if pip install xformers>=0.0.23 2>&1 | grep -q "error\|Error\|ERROR"; then
+    echo "Warning: xformers installation failed (this is OK, will use PyTorch SDPA instead)"
+else
+    # Test if xformers actually works (check for undefined symbol errors)
+    echo "Testing xformers compatibility..."
+    python -c "import sys; import xformers; from xformers.ops import fmha; print('xformers is compatible')" 2>&1 || {
+        echo "xformers is installed but incompatible, uninstalling..."
+        pip uninstall -y xformers || true
+        echo "xformers uninstalled - will use PyTorch SDPA instead"
+    }
+fi
+
 # Verify critical packages
 echo "[5/5] Verifying installation..."
 python -c "import torch; print(f'PyTorch: {torch.__version__}')"

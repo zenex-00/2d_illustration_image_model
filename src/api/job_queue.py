@@ -28,7 +28,6 @@ class Job:
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    progress: int = 0
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -80,7 +79,9 @@ class JobQueue:
             status=JobStatus.PENDING,
             created_at=datetime.utcnow(),
             metadata=metadata or {},
-            progress=0
+            progress=0.0,
+            current_epoch=0,
+            total_epochs=0
         )
         
         self.jobs[job_id] = job
