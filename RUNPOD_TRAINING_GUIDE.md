@@ -19,7 +19,17 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
 
 1. RunPod Dashboard → **Volumes** → **Create Volume**
 2. **Name**: `gemini3-models`
-3. **Size**: `50 GB`
+3. **Size**: `100 GB` (Recommended - minimum 50GB)
+   - **Important**: Models require substantial disk space:
+     - SDXL base model: ~14 GB
+     - ControlNet Depth: ~2.5 GB
+     - ControlNet Canny: ~2.5 GB
+     - GroundingDINO: ~2.7 GB
+     - SAM (Segment Anything): ~2.6 GB
+     - RealESRGAN: ~200 MB
+     - **Total: ~27 GB** (leaves ~23 GB for training data and cache)
+   - If using 50 GB volume, you won't have space for training data
+   - **Recommended: 100 GB** to avoid disk quota errors during setup
 4. **Region**: Choose closest
 5. Click **Create**
 6. **Note Volume ID** (you'll need it)
