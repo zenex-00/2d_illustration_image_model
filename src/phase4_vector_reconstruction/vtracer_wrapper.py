@@ -93,6 +93,14 @@ class VTracerWrapper:
                 os.makedirs(output_dir, exist_ok=True)
         
         try:
+            # Verify vtracer exists before running
+            if not os.path.exists(self.vtracer_path):
+                path_env = os.environ.get('PATH', 'not set')
+                raise FileNotFoundError(
+                    f"VTracer binary not found at: {self.vtracer_path}\n"
+                    f"PATH: {path_env[:200] if len(path_env) > 200 else path_env}"
+                )
+            
             # Build VTracer command
             cmd = [
                 self.vtracer_path,
@@ -105,41 +113,74 @@ class VTracerWrapper:
                 "--segment_length", str(self.segment_length)
             ]
             
-            logger.info("vtracer_starting", cmd=" ".join(cmd))
+            # Log the complete command and environment
+            logger.info(
+                "vtracer_executing",
+                cmd=" ".join(cmd),
+                timeout_seconds=self.timeout_seconds,
+                cwd=os.getcwd(),
+                path_env=os.environ.get('PATH', 'not set')[:200]  # First 200 chars
+            )
             
             # Run VTracer with timeout
             result = subprocess.run(
                 cmd,
                 timeout=self.timeout_seconds,
                 capture_output=True,
-                text=True
+                text=True,
+                check=False  # We handle the return code ourselves
             )
             
+            # Always log output
+            if result.stdout:
+                logger.info("vtracer_stdout", output=result.stdout[:500])
+            
+            if result.stderr:
+                logger.warning("vtracer_stderr", output=result.stderr[:500])
+            
+            # Check for success
             if result.returncode != 0:
-                error_msg = result.stderr or result.stdout
+                error_detail = result.stderr if result.stderr else result.stdout
+                if not error_detail:
+                    error_detail = f"Exit code {result.returncode} with no output"
+                
+                logger.error(
+                    "vtracer_failed",
+                    exit_code=result.returncode,
+                    stderr=result.stderr[:1000] if result.stderr else None,
+                    stdout=result.stdout[:1000] if result.stdout else None
+                )
+                
                 raise PhaseError(
                     phase="phase4",
-                    message=f"VTracer failed: {error_msg}"
+                    message=f"VTracer failed with exit code {result.returncode}: {error_detail}"
                 )
             
             # Read SVG output
             with open(output_path, 'r') as f:
                 svg_xml = f.read()
             
-            logger.info("vtracer_complete", output_size=len(svg_xml))
+            logger.info("vtracer_success", output_size=len(svg_xml))
             
             return svg_xml
             
-        except subprocess.TimeoutExpired:
-            raise PhaseError(
-                phase="phase4",
-                message=f"VTracer execution timed out after {self.timeout_seconds} seconds"
+        except subprocess.TimeoutExpired as e:
+            logger.error(
+                "vtracer_timeout",
+                timeout_seconds=self.timeout_seconds,
+                cmd=" ".join(cmd) if 'cmd' in locals() else "unknown"
             )
-        except Exception as e:
-            logger.error("vtracer_failed", error=str(e), exc_info=True)
             raise PhaseError(
                 phase="phase4",
-                message=f"VTracer execution failed: {str(e)}",
+                message=f"VTracer execution timed out after {self.timeout_seconds}s. "
+                        f"Image may be too large. Try with smaller image or increase timeout.",
+                original_error=e
+            )
+        except FileNotFoundError as e:
+            logger.error("vtracer_not_found", path=self.vtracer_path, error=str(e))
+            raise PhaseError(
+                phase="phase4",
+                message=str(e),
                 original_error=e
             )
         finally:

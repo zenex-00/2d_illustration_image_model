@@ -7,7 +7,17 @@ from typing import Dict, Any, Optional, List
 # Disable xformers early if it's causing import issues
 # This prevents RuntimeError when xformers is installed but incompatible with PyTorch/CUDA
 # The error manifests as: undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib
-if os.getenv("DISABLE_XFORMERS") != "1":
+
+# For RTX 5090, always disable xformers (uses native SDPA which is faster and more compatible)
+# RTX 5090 uses Blackwell (sm_120) architecture and benefits from PyTorch's native SDPA
+# xformers may not be compiled for Blackwell, causing compatibility issues
+gpu_model = os.getenv("GPU_MODEL", "")
+if gpu_model == "RTX_5090" or os.getenv("DISABLE_XFORMERS") == "1":
+    os.environ["XFORMERS_DISABLED"] = "1"
+    os.environ["DISABLE_XFORMERS"] = "1"
+    if gpu_model == "RTX_5090":
+        print("INFO: xformers disabled for RTX_5090 (using native SDPA)")
+else:
     try:
         # Try to import xformers - this may fail with ImportError or RuntimeError
         # if the compiled extension is incompatible with the current PyTorch/CUDA version
@@ -17,14 +27,17 @@ if os.getenv("DISABLE_XFORMERS") != "1":
             # Try to access a module that would trigger the symbol loading
             from xformers.ops import fmha  # noqa: F401
             os.environ.setdefault("XFORMERS_DISABLED", "0")
-        except Exception:
+            print("INFO: xformers enabled and compatible")
+        except Exception as e:
             # xformers is installed but incompatible (undefined symbol error)
             os.environ["XFORMERS_DISABLED"] = "1"
             os.environ["DISABLE_XFORMERS"] = "1"
-    except Exception:
+            print(f"WARNING: xformers is installed but incompatible, disabling: {e}")
+    except Exception as e:
         # xformers is not available or incompatible, disable it
         os.environ["XFORMERS_DISABLED"] = "1"
         os.environ["DISABLE_XFORMERS"] = "1"
+        print(f"INFO: xformers not available, using PyTorch SDPA instead: {e}")
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.responses import JSONResponse, Response, FileResponse, RedirectResponse, HTMLResponse
@@ -32,6 +45,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
+import asyncio
 
 from src.api.schemas import (
     ProcessImageRequest, 
@@ -83,6 +98,96 @@ app = FastAPI(
 
 # Include routers
 app.include_router(training_jobs.router)
+
+# Correlation ID middleware
+class CorrelationIDMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to propagate correlation IDs through the request lifecycle
+    and into subprocess calls.
+    """
+    async def dispatch(self, request: Request, call_next):
+        # Get or create correlation ID
+        correlation_id = request.headers.get(
+            "X-Correlation-ID",
+            str(uuid.uuid4())
+        )
+        
+        # Set in context
+        from src.utils.logger import set_correlation_id
+        set_correlation_id(correlation_id)
+        
+        # Pass to subprocesses via environment variable
+        os.environ["CORRELATION_ID"] = correlation_id
+        os.environ["REQUEST_PATH"] = request.url.path
+        os.environ["REQUEST_METHOD"] = request.method
+        
+        # Log request start
+        logger.info(
+            "request_start",
+            correlation_id=correlation_id,
+            method=request.method,
+            path=request.url.path
+        )
+        
+        try:
+            response = await call_next(request)
+            
+            logger.info(
+                "request_complete",
+                correlation_id=correlation_id,
+                status_code=response.status_code
+            )
+            
+            # Add correlation ID to response headers
+            response.headers["X-Correlation-ID"] = correlation_id
+            
+            return response
+        
+        except Exception as e:
+            logger.error(
+                "request_error",
+                correlation_id=correlation_id,
+                error=str(e),
+                exc_info=True
+            )
+            raise
+
+# Timeout middleware
+class TimeoutMiddleware(BaseHTTPMiddleware):
+    """Middleware to timeout long-running requests"""
+    def __init__(self, app, timeout: int = 300):
+        super().__init__(app)
+        self.timeout = timeout
+    
+    async def dispatch(self, request: Request, call_next):
+        try:
+            response = await asyncio.wait_for(
+                call_next(request),
+                timeout=self.timeout
+            )
+            return response
+        except asyncio.TimeoutError:
+            logger.error(
+                "request_timeout",
+                path=request.url.path,
+                method=request.method,
+                timeout=self.timeout
+            )
+            return JSONResponse(
+                status_code=504,
+                content={
+                    "error": "Request timeout",
+                    "message": f"Request exceeded {self.timeout} seconds",
+                    "path": request.url.path
+                }
+            )
+
+# Add correlation ID middleware (first, so it's available to all other middleware)
+app.add_middleware(CorrelationIDMiddleware)
+
+# Add timeout middleware (5 minutes default)
+request_timeout = int(os.getenv("REQUEST_TIMEOUT", "300"))
+app.add_middleware(TimeoutMiddleware, timeout=request_timeout)
 
 # CORS configuration
 origins = os.getenv("CORS_ORIGINS", "*").split(",")

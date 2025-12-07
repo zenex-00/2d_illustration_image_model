@@ -49,7 +49,10 @@ def main():
         workers=workers if not reload else 1,  # Reload doesn't work with multiple workers
         reload=reload,
         log_level=log_level,
-        access_log=True
+        access_log=True,
+        timeout_keep_alive=30,  # Connection timeout
+        timeout_notify=30,      # Graceful shutdown timeout
+        server_header=False
     )
 
 

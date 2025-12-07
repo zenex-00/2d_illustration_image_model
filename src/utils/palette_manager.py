@@ -25,6 +25,25 @@ class PaletteManager:
         self.rgb_colors = self._hex_to_rgb(self.hex_colors)
         logger.info("palette_loaded", num_colors=len(self.hex_colors))
     
+    @classmethod
+    def from_hex_list(cls, hex_colors: List[str]) -> 'PaletteManager':
+        """
+        Create PaletteManager from hex color list
+        
+        Args:
+            hex_colors: List of hex color strings (e.g., ['#FF0000', '#00FF00'])
+                       Colors should include '#' prefix
+        
+        Returns:
+            Initialized PaletteManager instance
+        """
+        instance = cls.__new__(cls)  # Create instance without calling __init__
+        instance.hex_colors = hex_colors
+        instance._validate_palette()
+        instance.rgb_colors = instance._hex_to_rgb(hex_colors)
+        logger.info("palette_created_from_hex_list", num_colors=len(hex_colors))
+        return instance
+    
     def _validate_palette(self):
         """Validate palette has exactly 15 colors and valid hex codes"""
         if len(self.hex_colors) != 15:

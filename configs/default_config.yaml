@@ -42,6 +42,7 @@ phase2:
   iou_retry:
     max_retries: 2
     iou_threshold: 0.85
+    allow_skip_on_failure: false  # If true, continue with best attempt when all retries fail
   sdxl:
     base_model: "stabilityai/stable-diffusion-xl-base-1.0"
     num_inference_steps: 30

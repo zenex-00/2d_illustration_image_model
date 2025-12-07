@@ -1,9 +1,17 @@
 # Core ML Libraries
 # PyTorch 2.8.0+ required for RTX 5090 (compute capability sm_120) support
-# For RTX 5090: Install from nightly index with CUDA 12.8+:
-#   pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
-# For other GPUs (RTX 3090, A10G, RTX 4090): Standard PyPI installation works
-# PyTorch 2.8.0+ is backward compatible with older GPUs
+# 
+# RTX 5090 Installation (REQUIRED for RTX 5090):
+#   The RTX 5090 uses NVIDIA's Blackwell architecture (sm_120) which requires:
+#   - PyTorch 2.8.0+ with CUDA 12.8+ support
+#   - Install from nightly index: pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
+#   - xformers should be DISABLED (set DISABLE_XFORMERS=1) - RTX 5090 uses native SDPA
+#
+# Other GPUs (RTX 3090, A10G, RTX 4090, etc.):
+#   Standard PyPI installation works: pip install torch>=2.8.0 torchvision>=0.23.0
+#   PyTorch 2.8.0+ is backward compatible with older GPUs
+#
+# Note: The version constraints below are minimums. For RTX 5090, you MUST use the nightly cu128 build.
 torch>=2.8.0
 torchvision>=0.23.0
 transformers>=4.56.2

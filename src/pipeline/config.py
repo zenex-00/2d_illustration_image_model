@@ -28,8 +28,48 @@ class Config:
         with open(config_path, 'r') as f:
             self._config = yaml.safe_load(f)
         
+        # Validate config structure
+        self._validate_config()
+        
         # Override with environment variables
         self._apply_env_overrides()
+    
+    def _validate_config(self):
+        """Validate configuration structure"""
+        if not isinstance(self._config, dict):
+            raise ValueError(
+                f"Config must be a dict, got {type(self._config).__name__}. "
+                f"Check if YAML file is valid."
+            )
+        
+        # Validate required sections
+        required_sections = ["hardware", "phase1", "phase2", "phase3", "phase4"]
+        missing_sections = []
+        for section in required_sections:
+            if section not in self._config:
+                missing_sections.append(section)
+        
+        if missing_sections:
+            raise ValueError(
+                f"Missing required config sections: {', '.join(missing_sections)}. "
+                f"Please ensure all required sections are present in the config file."
+            )
+        
+        # Validate critical hardware settings
+        hardware = self._config.get("hardware", {})
+        if "precision" in hardware:
+            precision = hardware["precision"]
+            if precision not in ["float16", "float32"]:
+                raise ValueError(
+                    f"Invalid precision value: {precision}. Must be 'float16' or 'float32'"
+                )
+        
+        if "device" in hardware:
+            device = hardware["device"]
+            if device not in ["cuda", "cpu"]:
+                raise ValueError(
+                    f"Invalid device value: {device}. Must be 'cuda' or 'cpu'"
+                )
     
     def _apply_env_overrides(self):
         """Apply environment variable overrides"""

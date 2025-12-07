@@ -153,12 +153,8 @@ class Gemini3Pipeline:
             if palette_hex_list:
                 from src.utils.palette_manager import PaletteManager
                 try:
-                    # Create a temporary palette manager instance with custom colors
-                    # Use object.__new__ to avoid file loading, but with proper error handling
-                    palette = object.__new__(PaletteManager)
-                    palette.hex_colors = palette_hex_list
-                    palette._validate_palette()  # Validate custom palette
-                    palette.rgb_colors = palette._hex_to_rgb(palette_hex_list)
+                    # Create palette manager from hex list using factory method
+                    palette = PaletteManager.from_hex_list(palette_hex_list)
                 except (ValueError, TypeError, AttributeError) as e:
                     logger.error(
                         "invalid_palette_fallback",
@@ -221,7 +217,10 @@ class Gemini3Pipeline:
                 iou_retry_config = phase2_config.get("iou_retry", {})
                 max_retries = iou_retry_config.get("max_retries", 2)
                 iou_threshold = iou_retry_config.get("iou_threshold", 0.85)
+                allow_iou_skip = iou_retry_config.get("allow_skip_on_failure", False)
                 retry_count = 0
+                best_attempt = None
+                best_iou = 0.0
                 
                 while retry_count <= max_retries:
                     # Build controlnet weights override
@@ -249,6 +248,11 @@ class Gemini3Pipeline:
                             phase="phase2"
                         )
                         
+                        # Track best attempt
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_attempt = (vector_raster, phase2_metadata)
+                        
                         if is_valid or retry_count >= max_retries:
                             # IoU is acceptable or we've exhausted retries
                             if retry_count > 0:
@@ -262,6 +266,12 @@ class Gemini3Pipeline:
                     except ValidationError as e:
                         # IoU below threshold, retry with increased weights
                         iou = extract_iou_from_error(e)
+                        
+                        # Track best attempt
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_attempt = (vector_raster, phase2_metadata)
+                        
                         if retry_count < max_retries:
                             retry_count += 1
                             # Increase weights (capped at max values)
@@ -276,13 +286,26 @@ class Gemini3Pipeline:
                             )
                             continue  # Retry with new weights
                         else:
-                            # Max retries reached, log warning but continue
-                            logger.warning(
-                                "iou_retry_exhausted",
-                                final_iou=iou,
-                                max_retries=max_retries
-                            )
-                            break
+                            # Max retries reached
+                            if allow_iou_skip:
+                                # Use best attempt and continue
+                                logger.warning(
+                                    "iou_retry_exhausted_continuing",
+                                    final_iou=iou,
+                                    best_iou=best_iou,
+                                    max_retries=max_retries
+                                )
+                                if best_attempt:
+                                    vector_raster, phase2_metadata = best_attempt
+                                break
+                            else:
+                                # Raise error (current behavior)
+                                logger.warning(
+                                    "iou_retry_exhausted",
+                                    final_iou=iou,
+                                    max_retries=max_retries
+                                )
+                                raise  # Re-raise ValidationError
                 
                 # Add retry info to metadata
                 phase2_metadata["iou_retry_count"] = retry_count

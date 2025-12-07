@@ -84,11 +84,13 @@ class JobQueue:
             total_epochs=0
         )
         
-        self.jobs[job_id] = job
-        
-        # Cleanup old jobs if we exceed max
-        if len(self.jobs) > self.max_jobs:
-            self._cleanup_old_jobs()
+        # Acquire lock before modifying jobs dictionary
+        with self._lock:
+            self.jobs[job_id] = job
+            
+            # Cleanup old jobs if we exceed max (while holding lock)
+            if len(self.jobs) > self.max_jobs:
+                self._cleanup_old_jobs_unlocked()
         
         logger.info("job_created", job_id=job_id)
         return job_id
@@ -158,24 +160,28 @@ class JobQueue:
     def _cleanup_old_jobs(self):
         """Remove oldest completed/failed jobs (thread-safe)"""
         with self._lock:
-            # Sort jobs by creation time
-            sorted_jobs = sorted(
-                self.jobs.items(),
-                key=lambda x: x[1].created_at
-            )
-            
-            # Remove oldest completed/failed jobs
-            removed = 0
-            for job_id, job in sorted_jobs:
-                # Check existence before deletion to prevent KeyError
-                if job_id in self.jobs and job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
-                    del self.jobs[job_id]
-                    removed += 1
-                    if len(self.jobs) <= self.max_jobs:
-                        break
-            
-            if removed > 0:
-                logger.info("old_jobs_cleaned_up", removed_count=removed)
+            self._cleanup_old_jobs_unlocked()
+    
+    def _cleanup_old_jobs_unlocked(self):
+        """Remove oldest completed/failed jobs (assumes lock is already held)"""
+        # Sort jobs by creation time
+        sorted_jobs = sorted(
+            self.jobs.items(),
+            key=lambda x: x[1].created_at
+        )
+        
+        # Remove oldest completed/failed jobs
+        removed = 0
+        for job_id, job in sorted_jobs:
+            # Check existence before deletion to prevent KeyError
+            if job_id in self.jobs and job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+                del self.jobs[job_id]
+                removed += 1
+                if len(self.jobs) <= self.max_jobs:
+                    break
+        
+        if removed > 0:
+            logger.info("old_jobs_cleaned_up", removed_count=removed)
 
 
 # Global job queue instance

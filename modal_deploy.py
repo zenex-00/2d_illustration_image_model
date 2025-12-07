@@ -50,10 +50,57 @@ def fastapi_app():
 def setup_models():
     """Setup models on network volume (run once)"""
     import subprocess
-    subprocess.run([
-        "python", "scripts/setup_model_volume.py",
-        "--volume-path", "/models"
-    ])
+    import sys
+    from pathlib import Path
+    
+    script_path = Path("scripts/setup_model_volume.py")
+    
+    if not script_path.exists():
+        raise FileNotFoundError(
+            f"Model setup script not found: {script_path}\n"
+            f"Current directory: {Path.cwd()}"
+        )
+    
+    print(f"[Models] Starting model setup from: {script_path}")
+    print(f"[Models] Target volume: /models")
+    
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,  # Use same Python as current process
+                str(script_path),
+                "--volume-path", "/models"
+            ],
+            check=False,  # We handle return code
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minute timeout
+        )
+        
+        # Log output
+        if result.stdout:
+            print("[Models] STDOUT:")
+            print(result.stdout)
+        
+        if result.stderr:
+            print("[Models] STDERR:")
+            print(result.stderr)
+        
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Model setup failed with exit code {result.returncode}\n"
+                f"Error output:\n{result.stderr}"
+            )
+        
+        print("[Models] ✓ Model setup completed successfully")
+        
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            "Model setup timed out after 10 minutes. "
+            "Check network connection and model server availability."
+        )
+    except Exception as e:
+        raise RuntimeError(f"Model setup failed: {str(e)}")
 
 
 @stub.function(
