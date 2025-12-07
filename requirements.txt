@@ -1,19 +1,17 @@
 # Core ML Libraries
-# PyTorch 2.8.0+ required for RTX 5090 (compute capability sm_120) support
+# PyTorch 2.4.x/2.5.x required for RTX 4090 (compute capability sm_89) support
 # 
-# RTX 5090 Installation (REQUIRED for RTX 5090):
-#   The RTX 5090 uses NVIDIA's Blackwell architecture (sm_120) which requires:
-#   - PyTorch 2.8.0+ with CUDA 12.8+ support
-#   - Install from nightly index: pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
-#   - xformers should be DISABLED (set DISABLE_XFORMERS=1) - RTX 5090 uses native SDPA
+# RTX 4090 Installation (REQUIRED for RTX 4090):
+#   The RTX 4090 uses NVIDIA's Ada Lovelace architecture (sm_89) which requires:
+#   - PyTorch 2.4.0+ with CUDA 12.1/12.4 support (stable, not nightly)
+#   - Install from stable PyPI: pip install torch>=2.4.0,<2.6.0 torchvision>=0.19.0
+#   - For CUDA 12.1: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   - For CUDA 12.4: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#   - xformers should be ENABLED for RTX 4090 (provides memory optimization)
 #
-# Other GPUs (RTX 3090, A10G, RTX 4090, etc.):
-#   Standard PyPI installation works: pip install torch>=2.8.0 torchvision>=0.23.0
-#   PyTorch 2.8.0+ is backward compatible with older GPUs
-#
-# Note: The version constraints below are minimums. For RTX 5090, you MUST use the nightly cu128 build.
-torch>=2.8.0
-torchvision>=0.23.0
+# Note: RTX 4090 is fully supported by stable PyTorch 2.4.x+ with CUDA 12.1/12.4
+torch>=2.4.0,<2.6.0
+torchvision>=0.19.0
 transformers>=4.56.2
 diffusers>=0.30.0
 accelerate>=0.33.0
@@ -84,9 +82,8 @@ kornia>=0.7.0
 peft>=0.13.0
 albumentations>=1.3.0
 
-# Memory Optimization (optional but recommended)
-# xformers>=0.0.23  # Commented out - install separately if compatible with your PyTorch/CUDA version
-# To install xformers: pip install xformers>=0.0.23 (may fail if PyTorch/CUDA versions are incompatible)
+# Memory Optimization (recommended for RTX 4090)
+xformers>=0.0.23  # Enabled for RTX 4090 - provides memory-efficient attention
 bitsandbytes>=0.43.0
 
 # Monitoring (optional)

@@ -1,6 +1,6 @@
 # Optimized Dockerfile for serverless deployment
-# Base: PyTorch with CUDA 11.8 and cuDNN 8 runtime
-FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
+# Base: PyTorch 2.4.0 with CUDA 12.1 and cuDNN 8 runtime (RTX 4090 compatible)
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn8-runtime
 
 # Set working directory
 WORKDIR /app

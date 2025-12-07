@@ -4,20 +4,19 @@ import uuid
 import logging
 from typing import Dict, Any, Optional, List
 
-# Disable xformers early if it's causing import issues
+# xformers configuration for RTX 4090 (Ada Lovelace, sm_89)
+# RTX 4090 benefits from xformers for memory-efficient attention
 # This prevents RuntimeError when xformers is installed but incompatible with PyTorch/CUDA
 # The error manifests as: undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib
 
-# For RTX 5090, always disable xformers (uses native SDPA which is faster and more compatible)
-# RTX 5090 uses Blackwell (sm_120) architecture and benefits from PyTorch's native SDPA
-# xformers may not be compiled for Blackwell, causing compatibility issues
+# Check if xformers should be explicitly disabled via environment variable
 gpu_model = os.getenv("GPU_MODEL", "")
-if gpu_model == "RTX_5090" or os.getenv("DISABLE_XFORMERS") == "1":
+if os.getenv("DISABLE_XFORMERS") == "1":
     os.environ["XFORMERS_DISABLED"] = "1"
     os.environ["DISABLE_XFORMERS"] = "1"
-    if gpu_model == "RTX_5090":
-        print("INFO: xformers disabled for RTX_5090 (using native SDPA)")
+    print("INFO: xformers explicitly disabled via DISABLE_XFORMERS=1")
 else:
+    # For RTX 4090, try to enable xformers (it's compatible with Ada Lovelace architecture)
     try:
         # Try to import xformers - this may fail with ImportError or RuntimeError
         # if the compiled extension is incompatible with the current PyTorch/CUDA version
@@ -27,12 +26,13 @@ else:
             # Try to access a module that would trigger the symbol loading
             from xformers.ops import fmha  # noqa: F401
             os.environ.setdefault("XFORMERS_DISABLED", "0")
-            print("INFO: xformers enabled and compatible")
+            print("INFO: xformers enabled and compatible (RTX 4090 optimized)")
         except Exception as e:
             # xformers is installed but incompatible (undefined symbol error)
             os.environ["XFORMERS_DISABLED"] = "1"
             os.environ["DISABLE_XFORMERS"] = "1"
             print(f"WARNING: xformers is installed but incompatible, disabling: {e}")
+            print("INFO: Falling back to PyTorch SDPA")
     except Exception as e:
         # xformers is not available or incompatible, disable it
         os.environ["XFORMERS_DISABLED"] = "1"

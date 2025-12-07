@@ -5,10 +5,10 @@ pipeline:
 
 hardware:
   device: "cuda"
-  precision: "float16"
-  max_vram_gb: 24  # Updated for A10G (24GB VRAM)
-  enable_xformers: true
-  enable_attention_slicing: true
+  precision: "float16"  # Required for RTX 4090 (24GB VRAM) - reduces memory by ~50%
+  max_vram_gb: 24  # RTX 4090 VRAM limit
+  enable_xformers: true  # Enabled for RTX 4090 - provides memory-efficient attention
+  enable_attention_slicing: true  # Required for RTX 4090 - reduces memory by ~30%
 
 serverless:
   model_volume_path: "/models"
