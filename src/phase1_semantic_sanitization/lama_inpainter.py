@@ -1,6 +1,9 @@
 """LaMa inpainting with quality checks and IoU validation"""
 
 import numpy as np
+import sys
+import os
+from pathlib import Path
 from typing import Optional
 from src.utils.logger import get_logger
 from src.utils.error_handler import retry_on_failure, ModelLoadError, ValidationError
@@ -8,6 +11,51 @@ from src.utils.quality_assurance import calculate_iou
 from src.pipeline.model_cache import get_model_cache
 
 logger = get_logger(__name__)
+
+# Path to isolated lama-cleaner virtual environment
+LAMA_VENV_DIR = os.getenv("LAMA_VENV_DIR", "/opt/lama-cleaner-venv")
+
+def _find_venv_site_packages(venv_dir: str) -> Optional[Path]:
+    """Find site-packages directory in a virtual environment"""
+    venv_path = Path(venv_dir)
+    if not venv_path.exists():
+        return None
+    
+    # Try standard path: lib/pythonX.Y/site-packages
+    python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    site_packages = venv_path / "lib" / python_version / "site-packages"
+    if site_packages.exists():
+        return site_packages
+    
+    # Try alternative: lib64/pythonX.Y/site-packages (some Linux distributions)
+    site_packages = venv_path / "lib64" / python_version / "site-packages"
+    if site_packages.exists():
+        return site_packages
+    
+    # Try to find any site-packages directory
+    lib_dir = venv_path / "lib"
+    if lib_dir.exists():
+        for subdir in lib_dir.iterdir():
+            if subdir.is_dir() and subdir.name.startswith("python"):
+                site_packages = subdir / "site-packages"
+                if site_packages.exists():
+                    return site_packages
+    
+    return None
+
+def _add_lama_venv_to_path():
+    """Add lama-cleaner venv site-packages to sys.path if it exists"""
+    site_packages = _find_venv_site_packages(LAMA_VENV_DIR)
+    
+    if site_packages and str(site_packages) not in sys.path:
+        sys.path.insert(0, str(site_packages))
+        logger.debug("Added lama-cleaner venv to sys.path", venv_path=str(site_packages))
+    elif not site_packages:
+        logger.warning(
+            "lama_venv_not_found",
+            venv_path=LAMA_VENV_DIR,
+            message="Lama-cleaner venv not found. Install it using scripts/install_dependencies.sh"
+        )
 
 
 class LaMaInpainter:
@@ -30,6 +78,9 @@ class LaMaInpainter:
     def _load_model(self):
         """Load LaMa model with retry logic"""
         try:
+            # Add lama-cleaner venv to path before importing
+            _add_lama_venv_to_path()
+            
             from lama_cleaner.model_manager import ModelManager
             from lama_cleaner.schema import Config, HDStrategy, SDSampler
             

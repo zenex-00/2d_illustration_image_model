@@ -67,14 +67,14 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 3090/A10G/RTX 4090 (PyTorch 2.8.0+)**:
    ```bash
-   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch>=2.8.0 torchvision>=0.23.0 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && dpkg --configure -a || true && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch>=2.8.0 torchvision>=0.23.0 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **Note**: PyTorch 2.8.0+ is now required for all GPUs (backward compatible). Upgrading PyTorch before installing other dependencies ensures torchvision compatibility and prevents dtype mismatch errors.
    
    **For RTX 5090 (PyTorch 2.8.0+ required - sm_120 support)**:
    ```bash
-   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 5090"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && dpkg --configure -a || true && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 5090"
    ```
    
    **Note**: RTX 5090 requires PyTorch 2.8.0+ with CUDA 12.8+ support. CUDA 12.8 nightly builds (cu128) are confirmed to work with RTX 5090. If nightly fails, try cu129 stable builds (see troubleshooting section).
@@ -124,8 +124,9 @@ This avoids complex startup commands that can cause container errors.
 If you used `sleep infinity` as startup command or automated setup failed, run setup manually:
 
 ```bash
-# 1. Install git and system libraries (required for OpenCV)
+# 1. Fix dpkg if interrupted, then install git and system libraries (required for OpenCV)
 export DEBIAN_FRONTEND=noninteractive
+dpkg --configure -a || true
 apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata
 
 # 2. Clone repositories
@@ -504,6 +505,7 @@ uvicorn src.api.server:app --host 0.0.0.0 --port 5090
    - Click **Logs** tab or **View Logs**
    - Look for error messages that show why container is failing
    - Common causes:
+     - `dpkg was interrupted` error (fixed in updated startup commands)
      - RTX 5090 PyTorch version warning (if using 2.1 image)
      - Startup command syntax error
      - Missing dependencies
@@ -709,6 +711,25 @@ pip install loguru
 
 Or the installation script now includes it automatically.
 
+### Dpkg Interrupted Error
+
+**Error**: `E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the problem.`
+
+**Cause**: A previous package installation was interrupted, leaving dpkg in an inconsistent state. This prevents new package installations.
+
+**Solution**:
+- The startup commands now include `dpkg --configure -a || true` before `apt-get update` to automatically fix this
+- If you see this error in a running pod, run manually:
+  ```bash
+  export DEBIAN_FRONTEND=noninteractive
+  dpkg --configure -a
+  apt-get update
+  apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata
+  ```
+- Then continue with your setup
+
+**Prevention**: The updated startup commands automatically handle this, so new pods won't encounter this issue.
+
 ### Container Stuck at tzdata Configuration Prompt
 
 **Error**: Container stops and waits at: `Please select the geographic area in which you live` (tzdata configuration)
@@ -721,6 +742,7 @@ Or the installation script now includes it automatically.
 - Or set timezone non-interactively:
   ```bash
   export DEBIAN_FRONTEND=noninteractive
+  dpkg --configure -a || true
   export TZ=UTC
   ln -fs /usr/share/zoneinfo/$TZ /etc/localtime
   dpkg-reconfigure -f noninteractive tzdata
@@ -735,6 +757,7 @@ Or the installation script now includes it automatically.
 **Solution**:
 ```bash
 export DEBIAN_FRONTEND=noninteractive
+dpkg --configure -a || true
 apt-get update
 apt-get install -y libgl1-mesa-glx libglib2.0-0
 ```
@@ -768,7 +791,9 @@ Then retry your command. To make it permanent for the session, add to your start
 5. Restart server:
    ```bash
    cd /workspace/image_generation
-   # Install system libraries if missing
+   # Fix dpkg if interrupted, then install system libraries if missing
+   export DEBIAN_FRONTEND=noninteractive
+   dpkg --configure -a || true
    apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0
    export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
    # For RTX 5090, use port 5090; for other GPUs, use port 8000

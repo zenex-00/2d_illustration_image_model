@@ -20,11 +20,21 @@ RUN VTracer_VERSION="0.6.1" && \
     chmod +x /usr/local/bin/vtracer && \
     vtracer --version || echo "VTracer installed"
 
+# Suppress root user warnings
+ENV PIP_ROOT_USER_ACTION=ignore
+
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy installation script
+COPY scripts/install_dependencies.sh /tmp/install_dependencies.sh
+RUN chmod +x /tmp/install_dependencies.sh
+
+# Install Python dependencies using the script (handles lama-cleaner isolation)
+RUN /tmp/install_dependencies.sh
+
+# Set environment variable for lama-cleaner venv location
+ENV LAMA_VENV_DIR=/opt/lama-cleaner-venv
 
 # Copy application code
 COPY . .
