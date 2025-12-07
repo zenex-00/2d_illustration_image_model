@@ -300,6 +300,9 @@ async def get_job_status(job_id: str):
     job = job_queue.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Compute updated_at from available timestamps
+    updated_at = job.completed_at or job.started_at or job.created_at
         
     return JobStatusResponse(
         job_id=job.job_id,
@@ -308,7 +311,7 @@ async def get_job_status(job_id: str):
         result_url=f"/api/v1/results/{job_id}" if job.status == "completed" else None,
         error=job.error,
         created_at=job.created_at,
-        updated_at=job.updated_at
+        updated_at=updated_at
     )
 
 @app.get("/api/v1/results/{job_id}")
@@ -367,6 +370,14 @@ if os.path.exists("templates"):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         return templates.TemplateResponse("training_job.html", {"request": request, "job": job})
+    
+    @app.get("/ui/training/jobs/{job_id}/status", response_class=HTMLResponse)
+    async def ui_training_job_status(request: Request, job_id: str):
+        """HTMX endpoint for polling training job status"""
+        job = job_queue.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return templates.TemplateResponse("training_job_partial.html", {"request": request, "job": job})
 
     @app.get("/ui/inference/jobs/{job_id}", response_class=HTMLResponse)
     async def ui_inference_job(request: Request, job_id: str):
@@ -424,10 +435,25 @@ if os.path.exists("templates"):
         job_id = str(uuid.uuid4())
         logger.info("ui_training_submitted", job_id=job_id, num_inputs=len(input_files))
         
+        # Store training parameters in metadata
+        training_metadata = {
+            "learning_rate": learning_rate,
+            "batch_size": batch_size,
+            "num_epochs": num_epochs,
+            "rank": rank,
+            "alpha": alpha,
+            "validation_split": validation_split,
+            "seed": seed,
+            "num_input_files": len(input_files),
+            "num_target_files": len(target_files)
+        }
+        
+        # Create job with training metadata
+        job_queue.create_job(job_id, metadata=training_metadata)
+        job_queue.update_job(job_id, status="pending", progress=0)
+        
         # In a real impl, we would save files and start training
         # For now, just create a job record so the UI doesn't 404
-        job_queue.create_job(job_id)
-        job_queue.update_job(job_id, status="pending", progress=0)
         
         return RedirectResponse(url=f"/ui/training/jobs/{job_id}", status_code=303)
 
