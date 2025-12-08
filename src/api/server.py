@@ -79,7 +79,7 @@ except RuntimeError as e:
         sys.exit(1)
     raise
 from src.utils.logger import get_logger, setup_logging
-from src.api.job_queue import JobQueue, Job
+from src.api.job_queue import JobQueue, Job, get_job_queue
 from src.api import training_jobs
 
 # Setup logging
@@ -88,7 +88,9 @@ logger = get_logger(__name__)
 
 # Global state
 pipeline: Optional[Gemini3Pipeline] = None
-job_queue = JobQueue()
+# Use get_job_queue() to ensure we use the same singleton instance
+# that training_runner.py uses, preventing "training_job_not_found" errors
+job_queue = get_job_queue()
 
 # Thread pool executor for long-running blocking tasks (like training)
 # This prevents blocking the event loop
