@@ -18,6 +18,30 @@
         <span>Val Loss: {{ "%.4f"|format(job.val_loss) }}</span>
         {% endif %}
     </div>
+    
+    <div class="phase-indicators">
+        <div class="phase phase-{{ 'active' if job.phase_status.get('phase1_status') == 'processing' else 'complete' if job.phase_status.get('phase1_status') == 'completed' else 'pending' }}">
+            <span>Phase 1: Semantic Sanitization</span>
+            <span class="phase-progress">{{ job.phase_status.get('phase1_progress', '0/0') }}</span>
+        </div>
+        <div class="phase phase-{{ 'active' if job.phase_status.get('phase2_status') == 'processing' else 'complete' if job.phase_status.get('phase2_status') == 'completed' else 'pending' }}">
+            <span>Phase 2: Preprocessing</span>
+            <span class="phase-progress">{{ job.phase_status.get('phase2_progress', '0/0') }}</span>
+        </div>
+        <div class="phase phase-{{ 'active' if job.status == 'processing' and job.phase_status.get('phase2_status') == 'completed' else 'complete' if job.status == 'completed' else 'pending' }}">
+            <span>Training: LoRA Training</span>
+        </div>
+    </div>
+    
+    {% if job.logs and job.logs|length > 0 %}
+    {% set last_log = job.logs[-1] %}
+    {% if 'Phase' in last_log or 'Removing background' in last_log or 'Generating depth' in last_log or 'Detecting edges' in last_log %}
+    <div class="current-operation">
+        {{ last_log|e }}
+    </div>
+    {% endif %}
+    {% endif %}
+    
     <div class="log-container">
         {% for log in job.logs|default([]) %}
         <div class="log-line">{{ log|e }}</div>

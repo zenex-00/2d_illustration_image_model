@@ -2,6 +2,8 @@ import os
 import time
 import uuid
 import logging
+import shutil
+from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 # xformers configuration for RTX 4090 (Ada Lovelace, sm_89)
@@ -185,18 +187,40 @@ class TimeoutMiddleware(BaseHTTPMiddleware):
 # Add correlation ID middleware (first, so it's available to all other middleware)
 app.add_middleware(CorrelationIDMiddleware)
 
-# Add timeout middleware (5 minutes default)
-request_timeout = int(os.getenv("REQUEST_TIMEOUT", "300"))
+# Add timeout middleware with validation
+try:
+    request_timeout = int(os.getenv("REQUEST_TIMEOUT", "600"))
+    if request_timeout < 30 or request_timeout > 3600:
+        logger.warning(
+            "request_timeout_out_of_range",
+            value=request_timeout,
+            using_default=600
+        )
+        request_timeout = 600
+except ValueError:
+    logger.warning("invalid_request_timeout_config", using_default=600)
+    request_timeout = 600
+
 app.add_middleware(TimeoutMiddleware, timeout=request_timeout)
 
 # CORS configuration
-origins = os.getenv("CORS_ORIGINS", "*").split(",")
+origins_str = os.getenv("CORS_ORIGINS", "http://localhost:3000")
+origins = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+
+# Validate CORS configuration
+# Cannot use "*" with allow_credentials=True (browser security restriction)
+if "*" in origins:
+    allow_credentials = False
+    logger.warning("cors_wildcard_with_credentials", message="Using '*' origin with credentials disabled for browser compatibility")
+else:
+    allow_credentials = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=allow_credentials,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key", "X-Correlation-ID"],
 )
 
 # Constants
@@ -335,13 +359,29 @@ def run_pipeline_task(job_id: str, input_path: str, palette: Any, config: Any):
         output_svg = os.path.join(API_OUTPUT_DIR, f"{job_id}.svg")
         output_png = os.path.join(API_OUTPUT_DIR, f"{job_id}_preview.png")
         
-        # Parse optional args
-        # (Handling logic for palette/config parsing would go here)
+        # Parse config_overrides JSON string if provided
+        config_overrides_dict = None
+        if config:
+            try:
+                import json
+                config_overrides_dict = json.loads(config)
+                # Validate config_overrides before passing to pipeline
+                from src.pipeline.orchestrator import _validate_config_overrides
+                _validate_config_overrides(config_overrides_dict)
+            except json.JSONDecodeError as e:
+                logger.error("invalid_config_overrides_json", job_id=job_id, error=str(e))
+                job_queue.update_job(job_id, status="failed", error=f"Invalid config_overrides JSON: {str(e)}")
+                return
+            except ValueError as e:
+                logger.error("invalid_config_overrides", job_id=job_id, error=str(e))
+                job_queue.update_job(job_id, status="failed", error=f"Invalid config_overrides: {str(e)}")
+                return
         
         svg_xml, metadata = pipe.process_image(
             input_image_path=input_path,
             output_svg_path=output_svg,
-            output_png_path=output_png
+            output_png_path=output_png,
+            config_overrides=config_overrides_dict
         )
         
         job_queue.update_job(job_id, status="completed", progress=100)
@@ -349,6 +389,32 @@ def run_pipeline_task(job_id: str, input_path: str, palette: Any, config: Any):
     except Exception as e:
         logger.error("job_failed", job_id=job_id, error=str(e), exc_info=True)
         job_queue.update_job(job_id, status="failed", error=str(e))
+
+
+def run_training_background_with_files(
+    job_id: str,
+    input_file_paths: List[str],
+    target_file_paths: List[str],
+    training_params: Dict[str, Any],
+    temp_dir: str
+):
+    """Wrapper to handle file paths for training background task"""
+    try:
+        from src.phase2_generative_steering.training_runner import run_training_background
+        
+        # Pass file paths directly (training_runner now handles paths)
+        run_training_background(job_id, input_file_paths, target_file_paths, training_params)
+        
+    except Exception as e:
+        logger.error("training_wrapper_failed", job_id=job_id, error=str(e), exc_info=True)
+        job_queue.update_job(job_id, status="failed", error=str(e))
+    finally:
+        # Cleanup temp directory
+        try:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+        except Exception as e:
+            logger.warning("temp_cleanup_failed", temp_dir=temp_dir, error=str(e))
 
 
 # UI Mounts (if templates exist)
@@ -378,6 +444,124 @@ if os.path.exists("templates"):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         return templates.TemplateResponse("training_job_partial.html", {"request": request, "job": job})
+    
+    @app.get("/api/training/jobs/{job_id}/images/{image_type}/{image_name}")
+    async def get_training_image(job_id: str, image_type: str, image_name: str):
+        """Serve intermediate training images"""
+        job = job_queue.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Get intermediate images directory from metadata
+        intermediate_dir = job.metadata.get("intermediate_images_dir")
+        if not intermediate_dir:
+            raise HTTPException(status_code=404, detail="Intermediate images directory not found")
+        
+        # Map image types to directories
+        type_to_dir = {
+            "raw": "inputs",
+            "phase1": "processed_inputs",
+            "phase2_depth": "control_images",
+            "phase2_edge": "control_images",
+            "target": "targets"
+        }
+        
+        if image_type not in type_to_dir:
+            raise HTTPException(status_code=400, detail=f"Invalid image type: {image_type}")
+        
+        # Construct file path
+        base_dir = Path(intermediate_dir) / type_to_dir[image_type]
+        
+        # For phase2_depth and phase2_edge, modify filename
+        if image_type == "phase2_depth":
+            if not image_name.startswith("depth_"):
+                # Extract index from input format (e.g., "0000_image.jpg")
+                try:
+                    idx = image_name.split("_")[0]
+                    image_name = f"depth_{idx}.png"
+                except (ValueError, IndexError):
+                    raise HTTPException(status_code=400, detail=f"Invalid image name format for depth: {image_name}")
+        elif image_type == "phase2_edge":
+            if not image_name.startswith("edge_"):
+                # Extract index from input format
+                try:
+                    idx = image_name.split("_")[0]
+                    image_name = f"edge_{idx}.png"
+                except (ValueError, IndexError):
+                    raise HTTPException(status_code=400, detail=f"Invalid image name format for edge: {image_name}")
+        
+        image_path = base_dir / image_name
+        
+        if not image_path.exists():
+            raise HTTPException(status_code=404, detail=f"Image not found: {image_name}")
+        
+        # Determine content type
+        content_type = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
+        
+        return FileResponse(str(image_path), media_type=content_type)
+    
+    @app.get("/api/training/jobs/{job_id}/preprocessing-gallery")
+    async def get_preprocessing_gallery(job_id: str):
+        """Get list of available preprocessing images"""
+        job = job_queue.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        intermediate_dir = job.metadata.get("intermediate_images_dir")
+        if not intermediate_dir:
+            return JSONResponse({
+                "raw_inputs": [],
+                "phase1_outputs": [],
+                "phase2_depth": [],
+                "phase2_edge": [],
+                "targets": []
+            })
+        
+        base_path = Path(intermediate_dir)
+        gallery = {
+            "raw_inputs": [],
+            "phase1_outputs": [],
+            "phase2_depth": [],
+            "phase2_edge": [],
+            "targets": []
+        }
+        
+        # Scan directories and build image lists
+        dirs = {
+            "raw_inputs": base_path / "inputs",
+            "phase1_outputs": base_path / "processed_inputs",
+            "targets": base_path / "targets"
+        }
+        
+        for key, dir_path in dirs.items():
+            if dir_path.exists():
+                for img_file in sorted(dir_path.glob("*.{jpg,jpeg,png}")):
+                    gallery[key].append({
+                        "name": img_file.name,
+                        "url": f"/api/training/jobs/{job_id}/images/{key.replace('_', '/')}/{img_file.name}"
+                    })
+        
+        # Handle control images separately
+        control_dir = base_path / "control_images"
+        if control_dir.exists():
+            for depth_file in sorted(control_dir.glob("depth_*.png")):
+                idx = depth_file.stem.replace("depth_", "")
+                # Use a placeholder name that matches the expected format
+                placeholder_name = f"{idx}_depth.png"
+                gallery["phase2_depth"].append({
+                    "name": depth_file.name,
+                    "url": f"/api/training/jobs/{job_id}/images/phase2_depth/{placeholder_name}"
+                })
+            
+            for edge_file in sorted(control_dir.glob("edge_*.png")):
+                idx = edge_file.stem.replace("edge_", "")
+                placeholder_name = f"{idx}_edge.png"
+                gallery["phase2_edge"].append({
+                    "name": edge_file.name,
+                    "url": f"/api/training/jobs/{job_id}/images/phase2_edge/{placeholder_name}"
+                })
+        
+        return JSONResponse(gallery)
 
     @app.get("/ui/inference/jobs/{job_id}", response_class=HTMLResponse)
     async def ui_inference_job(request: Request, job_id: str):
@@ -431,9 +615,22 @@ if os.path.exists("templates"):
         seed: int = Form(...),
         request: Request = None
     ):
-        """Handle training form submission (Mock implementation)"""
+        """Handle training form submission"""
         job_id = str(uuid.uuid4())
         logger.info("ui_training_submitted", job_id=job_id, num_inputs=len(input_files))
+        
+        # Validate file counts match
+        if len(input_files) != len(target_files):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Input and target file counts must match: {len(input_files)} inputs vs {len(target_files)} targets"
+            )
+        
+        if len(input_files) < 10:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Need at least 10 image pairs, got {len(input_files)}"
+            )
         
         # Store training parameters in metadata
         training_metadata = {
@@ -452,8 +649,56 @@ if os.path.exists("templates"):
         job_queue.create_job(job_id, metadata=training_metadata)
         job_queue.update_job(job_id, status="pending", progress=0)
         
-        # In a real impl, we would save files and start training
-        # For now, just create a job record so the UI doesn't 404
+        # Store file objects for background task (read them now before async context ends)
+        # We need to read the files into memory or save them temporarily
+        # Since FastAPI UploadFile objects need to be read before the request ends,
+        # we'll save them to a temp location and pass paths to the background task
+        
+        import tempfile
+        temp_dir = tempfile.mkdtemp(prefix=f"training_{job_id}_")
+        
+        # Save files temporarily (background task will move them to final location)
+        saved_input_files = []
+        saved_target_files = []
+        
+        for idx, (input_file, target_file) in enumerate(zip(input_files, target_files)):
+            # Save input
+            input_temp_path = os.path.join(temp_dir, f"input_{idx}_{input_file.filename}")
+            with open(input_temp_path, "wb") as f:
+                content = await input_file.read()
+                f.write(content)
+            saved_input_files.append(input_temp_path)
+            
+            # Save target
+            target_temp_path = os.path.join(temp_dir, f"target_{idx}_{target_file.filename}")
+            with open(target_temp_path, "wb") as f:
+                content = await target_file.read()
+                f.write(content)
+            saved_target_files.append(target_temp_path)
+        
+        # Prepare training parameters
+        training_params = {
+            "learning_rate": learning_rate,
+            "batch_size": batch_size,
+            "num_epochs": num_epochs,
+            "rank": rank,
+            "alpha": alpha,
+            "validation_split": validation_split,
+            "seed": seed,
+        }
+        
+        # Start training in background
+        from src.phase2_generative_steering.training_runner import run_training_background
+        
+        # Pass file paths directly (training_runner handles both paths and file objects)
+        background_tasks.add_task(
+            run_training_background_with_files,
+            job_id,
+            saved_input_files,
+            saved_target_files,
+            training_params,
+            temp_dir
+        )
         
         return RedirectResponse(url=f"/ui/training/jobs/{job_id}", status_code=303)
 

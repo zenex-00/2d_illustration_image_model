@@ -84,15 +84,28 @@ def image_to_bytes(img: np.ndarray, format: str = "PNG") -> bytes:
     Convert numpy image to bytes.
     
     Args:
-        img: Input image
-        format: Image format (PNG, JPEG, etc.)
+        img: Input image (uint8 format)
+        format: Image format (PNG, JPEG, BMP, WEBP)
         
     Returns:
         Image bytes
+        
+    Raises:
+        ValueError: If format is unsupported or image conversion fails
     """
-    # Convert to PIL
-    pil_img = Image.fromarray(img)
+    # Validate format
+    valid_formats = ["PNG", "JPEG", "BMP", "WEBP"]
+    format_upper = format.upper()
+    if format_upper not in valid_formats:
+        raise ValueError(f"Unsupported format: {format}. Must be one of {valid_formats}")
     
-    buf = io.BytesIO()
-    pil_img.save(buf, format=format)
-    return buf.getvalue()
+    try:
+        # Convert to PIL
+        pil_img = Image.fromarray(img)
+        
+        # Use context manager for BytesIO to ensure proper cleanup
+        with io.BytesIO() as buf:
+            pil_img.save(buf, format=format_upper)
+            return buf.getvalue()
+    except Exception as e:
+        raise ValueError(f"Failed to convert image to bytes: {str(e)}") from e

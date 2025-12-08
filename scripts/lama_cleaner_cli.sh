@@ -18,3 +18,4 @@ source "$LAMA_VENV_DIR/bin/activate"
 exec lama-cleaner "$@"
 
 
+

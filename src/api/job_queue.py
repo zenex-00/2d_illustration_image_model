@@ -4,7 +4,7 @@ import uuid
 import threading
 import asyncio
 from datetime import datetime
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Union
 from enum import Enum
 from dataclasses import dataclass, field
 from src.utils.logger import get_logger
@@ -38,6 +38,7 @@ class Job:
     val_loss: Optional[float] = None
     artifacts: Dict[str, Any] = field(default_factory=dict)
     logs: list = field(default_factory=list)
+    phase_status: Dict[str, Any] = field(default_factory=dict)
 
 
 class JobQueue:
@@ -66,26 +67,32 @@ class JobQueue:
         Returns:
             Job ID
         """
-        if job_id is None:
-            job_id = str(uuid.uuid4())
-            
-        # Handle case where job_id was passed as first arg but might be dict (legacy compat check not strictly needed if valid types used)
-        if isinstance(job_id, dict) and metadata is None:
-             metadata = job_id
-             job_id = str(uuid.uuid4())
-
-        job = Job(
-            job_id=job_id,
-            status=JobStatus.PENDING,
-            created_at=datetime.utcnow(),
-            metadata=metadata or {},
-            progress=0.0,
-            current_epoch=0,
-            total_epochs=0
-        )
-        
-        # Acquire lock before modifying jobs dictionary
+        # Acquire lock before any job creation logic to prevent race conditions
         with self._lock:
+            # Handle case where job_id was passed as first arg but might be dict (legacy compat check not strictly needed if valid types used)
+            if isinstance(job_id, dict) and metadata is None:
+                metadata = job_id
+                job_id = None
+            
+            if job_id is None:
+                job_id = str(uuid.uuid4())
+            
+            # Check if job_id already exists (race condition protection)
+            if job_id in self.jobs:
+                logger.warning("job_id_collision", job_id=job_id)
+                # Generate new UUID if collision detected
+                job_id = str(uuid.uuid4())
+
+            job = Job(
+                job_id=job_id,
+                status=JobStatus.PENDING,
+                created_at=datetime.utcnow(),
+                metadata=metadata or {},
+                progress=0.0,
+                current_epoch=0,
+                total_epochs=0
+            )
+            
             self.jobs[job_id] = job
             
             # Cleanup old jobs if we exceed max (while holding lock)
@@ -107,15 +114,19 @@ class JobQueue:
         result: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None
     ) -> bool:
-        return self.update_job(job_id, status=status, result=result, error=error)
+        success = self.update_job(job_id, status=status, result=result, error=error)
+        if not success:
+            logger.warning("job_update_failed", job_id=job_id, status=status)
+        return success
 
     def update_job(
         self,
         job_id: str,
-        status: Optional[str] = None,
-        progress: Optional[int] = None,
+        status: Optional[Union[JobStatus, str]] = None,
+        progress: Optional[float] = None,
         result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None
+        error: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Update job details (flexible update)
@@ -123,38 +134,86 @@ class JobQueue:
         Args:
             job_id: Job ID
             status: New status (string or Enum)
-            progress: New progress (0-100)
+            progress: New progress (0-100, float)
             result: Optional result data
             error: Optional error message
+            metadata: Optional metadata dict (will be merged with existing)
+        """
+        with self._lock:
+            job = self.jobs.get(job_id)
+            if not job:
+                logger.warning("job_not_found", job_id=job_id)
+                return False
+            
+            if status:
+                # Normalize string input to JobStatus enum
+                if isinstance(status, str):
+                    try:
+                        status = JobStatus(status.lower())
+                    except ValueError:
+                        logger.warning("invalid_status_string", job_id=job_id, status=status)
+                        return False
+                
+                # Now status is guaranteed to be JobStatus enum
+                job.status = status
+                
+                if status == JobStatus.PROCESSING:
+                    if not job.started_at:
+                        job.started_at = datetime.utcnow()
+                elif status in (JobStatus.COMPLETED, JobStatus.FAILED):
+                    if not job.completed_at:
+                        job.completed_at = datetime.utcnow()
+            
+            if progress is not None:
+                job.progress = progress
+            
+            if result is not None:
+                job.result = result
+            
+            if error is not None:
+                job.error = error
+            
+            if metadata is not None:
+                job.metadata.update(metadata)
+            
+            # Log status value (status is JobStatus enum after normalization, or None)
+            status_value = status.value if status is not None else None
+            logger.info("job_updated", job_id=job_id, status=status_value, progress=progress)
+            return True
+    
+    def update_phase_status(
+        self,
+        job_id: str,
+        phase: str,
+        status: str,
+        progress: Optional[str] = None
+    ) -> bool:
+        """
+        Update phase-specific status for a job
+        
+        Args:
+            job_id: Job ID
+            phase: Phase name ("phase1" or "phase2")
+            status: Phase status ("not_started" | "processing" | "completed" | "failed")
+            progress: Optional progress string (e.g., "3/10")
+        
+        Returns:
+            True if updated, False if job not found
         """
         job = self.jobs.get(job_id)
         if not job:
             logger.warning("job_not_found", job_id=job_id)
             return False
         
-        if status:
-            # Handle string input for status
-            # If it's a string that matches our Enum values, use it.
-            # If it's already an Enum, use it.
-            job.status = status
-            
-            if status == JobStatus.PROCESSING or status == "processing":
-                if not job.started_at:
-                    job.started_at = datetime.utcnow()
-            elif status in (JobStatus.COMPLETED, JobStatus.FAILED) or status in ("completed", "failed"):
-                if not job.completed_at:
-                    job.completed_at = datetime.utcnow()
+        if not hasattr(job, 'phase_status'):
+            job.phase_status = {}
+        
+        job.phase_status[f"{phase}_status"] = status
         
         if progress is not None:
-            job.progress = progress
+            job.phase_status[f"{phase}_progress"] = progress
         
-        if result is not None:
-            job.result = result
-        
-        if error is not None:
-            job.error = error
-        
-        logger.info("job_updated", job_id=job_id, status=str(status), progress=progress)
+        logger.debug("phase_status_updated", job_id=job_id, phase=phase, status=status, progress=progress)
         return True
     
     def _cleanup_old_jobs(self):

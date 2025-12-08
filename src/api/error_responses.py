@@ -74,9 +74,17 @@ def create_error_response(
         instance=instance
     )
     
+    # Pydantic v2 compatibility: use model_dump() if available, fallback to dict() for v1
+    try:
+        # Pydantic v2
+        content = error_response.model_dump()
+    except AttributeError:
+        # Pydantic v1
+        content = error_response.dict()
+    
     return JSONResponse(
         status_code=status_code,
-        content=error_response.dict()
+        content=content
     )
 
 

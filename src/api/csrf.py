@@ -1,5 +1,6 @@
 """Simple CSRF protection for FastAPI forms"""
 
+import os
 import secrets
 from typing import Optional
 from fastapi import Request, HTTPException
@@ -12,7 +13,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     
     def __init__(self, app, secret_key: Optional[str] = None):
         super().__init__(app)
-        self.secret_key = secret_key or secrets.token_urlsafe(32)
+        if not secret_key:
+            secret_key = os.getenv("CSRF_SECRET_KEY")
+            if not secret_key:
+                raise ValueError("CSRF_SECRET_KEY environment variable must be set. Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(32))'")
+        self.secret_key = secret_key
     
     async def dispatch(self, request: Request, call_next):
         # Skip CSRF for GET requests and API endpoints

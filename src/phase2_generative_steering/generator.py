@@ -97,11 +97,19 @@ class Phase2Generator:
             # Step 1: Remove background
             bg_removed = self.bg_remover.remove_background(clean_plate)
             
-            # Extract RGB from RGBA if needed
-            if bg_removed.shape[2] == 4:
-                rgb_image = bg_removed[:, :, :3]
+            # Handle different image formats with comprehensive shape validation
+            if len(bg_removed.shape) == 3:
+                if bg_removed.shape[2] == 4:  # RGBA
+                    rgb_image = bg_removed[:, :, :3]
+                elif bg_removed.shape[2] == 3:  # RGB
+                    rgb_image = bg_removed
+                else:
+                    raise ValueError(f"Unexpected image channels: {bg_removed.shape[2]}. Expected 3 (RGB) or 4 (RGBA)")
+            elif len(bg_removed.shape) == 2:  # Grayscale
+                # Convert grayscale to RGB by stacking channels
+                rgb_image = np.stack([bg_removed] * 3, axis=-1)
             else:
-                rgb_image = bg_removed
+                raise ValueError(f"Unexpected image shape: {bg_removed.shape}. Expected 2D (grayscale) or 3D (RGB/RGBA)")
             
             # Step 2: Generate depth map
             depth_map = self.depth_estimator.estimate_depth(rgb_image)
@@ -173,16 +181,37 @@ class Phase2Generator:
             cache.clear_cache(phase_prefix="vae_")
             cache.clear_cache(phase_prefix="sdxl")
             
-            # Clear component references
-            del self.bg_remover
-            del self.depth_estimator
-            del self.edge_detector
-            del self.sdxl_generator
-            self.bg_remover = None
-            self.depth_estimator = None
-            self.edge_detector = None
-            self.sdxl_generator = None
+            # Comprehensive cleanup of component references
+            if self.bg_remover:
+                self.bg_remover = None
             
+            if self.depth_estimator:
+                self.depth_estimator = None
+            
+            if self.edge_detector:
+                self.edge_detector = None
+            
+            if self.sdxl_generator:
+                # Clear SDXL pipeline internals explicitly
+                if hasattr(self.sdxl_generator, 'pipe'):
+                    if hasattr(self.sdxl_generator.pipe, 'unet'):
+                        self.sdxl_generator.pipe.unet = None
+                    if hasattr(self.sdxl_generator.pipe, 'vae'):
+                        self.sdxl_generator.pipe.vae = None
+                    if hasattr(self.sdxl_generator.pipe, 'text_encoder'):
+                        self.sdxl_generator.pipe.text_encoder = None
+                    if hasattr(self.sdxl_generator.pipe, 'text_encoder_2'):
+                        self.sdxl_generator.pipe.text_encoder_2 = None
+                    self.sdxl_generator.pipe = None
+                # Clear controlnet_processor reference
+                if hasattr(self.sdxl_generator, 'controlnet_processor'):
+                    self.sdxl_generator.controlnet_processor = None
+                self.sdxl_generator = None
+            
+            # Clear stored edge map numpy array
+            self._last_edge_map = None
+            
+            # Force garbage collection and CUDA cache clearing
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
