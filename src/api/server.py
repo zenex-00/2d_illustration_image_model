@@ -49,6 +49,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from src.api.schemas import (
     ProcessImageRequest, 
@@ -88,6 +89,10 @@ logger = get_logger(__name__)
 # Global state
 pipeline: Optional[Gemini3Pipeline] = None
 job_queue = JobQueue()
+
+# Thread pool executor for long-running blocking tasks (like training)
+# This prevents blocking the event loop
+training_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="training")
 
 # Initialize API
 app = FastAPI(
@@ -247,6 +252,11 @@ templates = Jinja2Templates(directory="templates")
 @app.on_event("shutdown")
 async def shutdown_event():
     """Server shutdown event"""
+    global training_executor
+    # Shutdown thread pool executor gracefully
+    if training_executor:
+        training_executor.shutdown(wait=True, timeout=30)
+        logger.info("training_executor_shutdown")
     logger.info("server_shutdown")
 
 @app.get("/", response_class=HTMLResponse)
@@ -687,11 +697,12 @@ if os.path.exists("templates"):
             "seed": seed,
         }
         
-        # Start training in background
-        from src.phase2_generative_steering.training_runner import run_training_background
-        
-        # Pass file paths directly (training_runner handles both paths and file objects)
-        background_tasks.add_task(
+        # Start training in background using thread pool executor
+        # This ensures the long-running training task doesn't block the event loop
+        # and actually executes properly
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(
+            training_executor,
             run_training_background_with_files,
             job_id,
             saved_input_files,
