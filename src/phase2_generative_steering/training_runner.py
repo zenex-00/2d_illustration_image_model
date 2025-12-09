@@ -171,11 +171,16 @@ def run_training_background(
                     logger.error("phase1_failed_for_image", idx=idx, error=str(e), exc_info=True)
                     # Check if this is a PhaseError (meaning Phase 1 failed completely after retries)
                     from src.utils.error_handler import PhaseError
-                    from src.pipeline.config import get_config
-                    config = get_config()
-                    training_config = config.get("training", {})
-                    phase1_retry_config = training_config.get("phase1_retry", {})
-                    skip_on_failure = phase1_retry_config.get("skip_on_failure", False)
+                    # Use config that was already loaded earlier in the function
+                    # Get config again to avoid potential scoping issues
+                    try:
+                        config = get_config()
+                        training_config = config.get("training", {})
+                        phase1_retry_config = training_config.get("phase1_retry", {})
+                        skip_on_failure = phase1_retry_config.get("skip_on_failure", False)
+                    except:
+                        # Fallback to default value if config access fails
+                        skip_on_failure = False
 
                     if isinstance(e, PhaseError) and e.phase == "phase1":
                         if skip_on_failure:
