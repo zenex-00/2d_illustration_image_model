@@ -99,22 +99,50 @@ class GroundingDINODetector:
             with torch.no_grad():
                 outputs = self.model(**inputs)
             
-            # Post-process results - fix API for current transformers version
-            # The API has changed - input_ids is not needed in newer versions
-            results = self.processor.post_process_grounded_object_detection(
-                outputs,
-                box_threshold=box_thresh,
-                text_threshold=text_thresh,
-                target_sizes=[pil_image.size[::-1]]
-            )
+            # Post-process results according to HuggingFace documentation
+            # Try the documented API first, with fallbacks for different versions
+            results = []
+            try:
+                results = self.processor.post_process_grounded_object_detection(
+                    outputs,
+                    original_sizes=[pil_image.size[::-1]],
+                    target_sizes=[pil_image.size[::-1]],
+                    box_threshold=box_thresh,
+                    text_threshold=text_thresh
+                )
+            except TypeError:
+                # Fallback for different API versions
+                try:
+                    results = self.processor.post_process_grounded_object_detection(
+                        outputs,
+                        box_threshold=box_thresh,
+                        text_threshold=text_thresh,
+                        target_sizes=[pil_image.size[::-1]]
+                    )
+                except TypeError:
+                    # Final fallback - try with minimal parameters
+                    try:
+                        results = self.processor.post_process_grounded_object_detection(
+                            outputs,
+                            target_sizes=[pil_image.size[::-1]]
+                        )
+                    except Exception as e:
+                        # All attempts failed, log the error and continue with empty results
+                        logger.error("grounding_dino_processing_failed_all_attempts",
+                                   error=str(e), exc_info=True)
+                        results = []  # Ensure results is defined as empty list
             
             # Extract bounding boxes
             boxes = []
             if results and len(results) > 0:
                 result = results[0]
-                for box in result["boxes"]:
-                    x1, y1, x2, y2 = box.tolist()
-                    boxes.append((int(x1), int(y1), int(x2), int(y2)))
+                # Check if result has the expected structure
+                if "boxes" in result:
+                    for box in result["boxes"]:
+                        x1, y1, x2, y2 = box.tolist()
+                        boxes.append((int(x1), int(y1), int(x2), int(y2)))
+                else:
+                    logger.warning("grounding_dino_no_boxes_key", result_keys=list(result.keys()) if result else [])
             
             logger.info(
                 "grounding_dino_detection",
