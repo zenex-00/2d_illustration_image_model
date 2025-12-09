@@ -99,10 +99,10 @@ class GroundingDINODetector:
             with torch.no_grad():
                 outputs = self.model(**inputs)
             
-            # Post-process results
+            # Post-process results - fix API for current transformers version
+            # The API has changed - input_ids is not needed in newer versions
             results = self.processor.post_process_grounded_object_detection(
                 outputs,
-                inputs["input_ids"],
                 box_threshold=box_thresh,
                 text_threshold=text_thresh,
                 target_sizes=[pil_image.size[::-1]]
