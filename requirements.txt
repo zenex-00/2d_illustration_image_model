@@ -33,6 +33,7 @@ controlnet-aux>=0.0.10
 
 # Background Removal
 rembg>=2.0.50
+onnxruntime>=1.16.0  # Required by rembg for ONNX model inference
 
 # Depth Estimation
 zoedepth>=0.1.0

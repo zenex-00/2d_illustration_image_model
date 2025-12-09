@@ -169,12 +169,39 @@ def run_training_background(
                     
                 except Exception as e:
                     logger.error("phase1_failed_for_image", idx=idx, error=str(e), exc_info=True)
-                    # Fallback: use original image if Phase 1 fails
-                    phase1_output_path = job_processed_input_dir / raw_input_path.name
-                    shutil.copy2(raw_input_path, phase1_output_path)
-                    phase1_processed_paths.append(phase1_output_path)
-                    
-                    job.logs.append(f"[{datetime.utcnow()}] Phase 1: Image {idx+1} - Failed, using original image")
+                    # Check if this is a PhaseError (meaning Phase 1 failed completely after retries)
+                    from src.utils.error_handler import PhaseError
+                    from src.pipeline.config import get_config
+                    config = get_config()
+                    training_config = config.get("training", {})
+                    phase1_retry_config = training_config.get("phase1_retry", {})
+                    skip_on_failure = phase1_retry_config.get("skip_on_failure", False)
+
+                    if isinstance(e, PhaseError) and e.phase == "phase1":
+                        if skip_on_failure:
+                            # Skip this image if configured to do so
+                            job.logs.append(f"[{datetime.utcnow()}] Phase 1: Image {idx+1} - Failed after retries, skipping image")
+                            continue  # Skip this image
+                        else:
+                            # Use original image as fallback (current approach)
+                            # This maintains backward compatibility while still logging the failure
+                            phase1_output_path = job_processed_input_dir / raw_input_path.name
+                            shutil.copy2(raw_input_path, phase1_output_path)
+                            phase1_processed_paths.append(phase1_output_path)
+
+                            job.logs.append(f"[{datetime.utcnow()}] Phase 1: Image {idx+1} - Failed after retries, using original image")
+                    else:
+                        # For other types of errors, check the skip_on_failure setting
+                        if skip_on_failure:
+                            job.logs.append(f"[{datetime.utcnow()}] Phase 1: Image {idx+1} - Failed, skipping image")
+                            continue  # Skip this image
+                        else:
+                            # Use original image
+                            phase1_output_path = job_processed_input_dir / raw_input_path.name
+                            shutil.copy2(raw_input_path, phase1_output_path)
+                            phase1_processed_paths.append(phase1_output_path)
+
+                            job.logs.append(f"[{datetime.utcnow()}] Phase 1: Image {idx+1} - Failed, using original image")
         
         logger.info("phase1_processing_complete", processed_count=len(phase1_processed_paths))
         

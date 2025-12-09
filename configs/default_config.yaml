@@ -67,6 +67,35 @@ phase2:
   edge_detection:
     enabled: true
 
+training:
+  phase1_retry:
+    max_retries: 3
+    retry_on_no_change: true  # Retry if output is identical to input
+    skip_on_failure: false  # If true, skip images that fail after all retries; if false, use original image
+    parameter_variations:
+      - box_threshold: 0.25
+        text_threshold: 0.15  # More sensitive
+      - box_threshold: 0.35
+        text_threshold: 0.25  # Default
+      - box_threshold: 0.45
+        text_threshold: 0.35  # Less sensitive
+      - box_threshold: 0.55
+        text_threshold: 0.45  # Very conservative
+    fallback_models:
+      - sam_model: "vit_l"  # Try lighter SAM
+      - sam_model: "vit_b"  # Try even lighter
+
+  phase2_retry:
+    max_retries: 3
+    parameter_variations:
+      - bg_model: "birefnet"
+        depth_model: "zoedepth-anywhere"
+      - bg_model: "u2net"
+        depth_model: "zoedepth-nk"
+      - bg_model: "silueta"
+        depth_model: "zoedepth-anywhere"
+    skip_on_failure: false  # Exclude failed images instead of using placeholders
+
 phase3:
   enabled: true
   upscaler:
