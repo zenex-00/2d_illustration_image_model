@@ -47,19 +47,33 @@ MODELS = {
 
 
 def download_huggingface_model(model_id: str, output_dir: Path, token: str = None):
-    """Download model from HuggingFace"""
+    """Download model from HuggingFace with temporary directory handling"""
     try:
         from huggingface_hub import snapshot_download
-        
+        import tempfile
+
         logger.info("downloading_huggingface_model", model_id=model_id, output_dir=str(output_dir))
-        
-        snapshot_download(
-            repo_id=model_id,
-            local_dir=str(output_dir),
-            token=token,
-            local_dir_use_symlinks=False
-        )
-        
+
+        # Use temporary directory to avoid quota issues during download
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Download to temp directory first
+            temp_output_dir = Path(temp_dir) / "model_temp"
+
+            snapshot_download(
+                repo_id=model_id,
+                local_dir=str(temp_output_dir),
+                token=token,
+                local_dir_use_symlinks=False,
+                # Use cache directory in temp to avoid quota issues
+                cache_dir=temp_dir
+            )
+
+            # Then move to final location
+            import shutil
+            shutil.rmtree(output_dir, ignore_errors=True)  # Remove existing if any
+            output_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(temp_output_dir), str(output_dir))
+
         logger.info("huggingface_model_downloaded", model_id=model_id)
         return True
     except Exception as e:
@@ -72,22 +86,48 @@ def download_huggingface_model(model_id: str, output_dir: Path, token: str = Non
 
 
 def download_direct_file(url: str, output_path: Path):
-    """Download file directly from URL"""
+    """Download file directly from URL with temporary file handling"""
     import requests
-    
+    import tempfile
+
     logger.info("downloading_file", url=url, output_path=str(output_path))
-    
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-    
-    with open(output_path, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
-    
-    logger.info("file_downloaded", output_path=str(output_path))
-    return True
+
+    # Create temporary file in system temp directory to avoid quota issues
+    temp_dir = Path(tempfile.gettempdir())
+    temp_file = temp_dir / f"temp_{output_path.name}"
+
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+
+        # Download to temporary location first
+        with open(temp_file, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        # Move to final location after download completes
+        import shutil
+        shutil.move(str(temp_file), str(output_path))
+
+        logger.info("file_downloaded", output_path=str(output_path))
+        return True
+    except Exception as e:
+        # Clean up temp file if download fails
+        if temp_file.exists():
+            try:
+                temp_file.unlink()
+            except:
+                pass  # Ignore cleanup errors
+
+        error_msg = str(e)
+        if "Disk quota exceeded" in error_msg or "No space left" in error_msg:
+            logger.critical("disk_space_error", url=url, error="CRITICAL: Not enough space to download file. Check RunPod volume quota.")
+        else:
+            logger.error("direct_download_failed", url=url, error=error_msg)
+
+        raise e
 
 
 def setup_model_volume(volume_path: str, models: List[str] = None, hf_token: str = None):
