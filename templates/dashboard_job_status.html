@@ -1,0 +1,34 @@
+{% for job in jobs %}
+<div class="status-item">
+    <div class="status-header">
+        <div class="status-title">{{ job.job_id[:8] }}...</div>
+        <span class="status-badge status-{{ job.status }}">{{ job.status.title() }}</span>
+    </div>
+    <div class="progress-bar">
+        <div class="progress-fill" style="width: {{ job.progress }}%"></div>
+    </div>
+    <div class="progress-text">{{ "%.1f"|format(job.progress) }}%</div>
+
+    {% if job.current_epoch > 0 and job.total_epochs > 0 %}
+    <div class="epoch-info">
+        Epoch: {{ job.current_epoch }} / {{ job.total_epochs }}
+    </div>
+    {% endif %}
+
+    {% if job.train_loss %}
+    <div class="loss-info">
+        Loss: {{ "%.4f"|format(job.train_loss) }}
+    </div>
+    {% endif %}
+
+    {% if job.error %}
+    <div class="error-info" style="color: #f44336; font-size: 0.8em; margin-top: 5px;">
+        Error: {{ job.error[:50] }}{% if job.error|length > 50 %}...{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="job-timestamp" style="font-size: 0.7em; color: #999; margin-top: 5px;">
+        Created: {{ job.created_at.split('T')[0] if job.created_at else 'N/A' }}
+    </div>
+</div>
+{% endfor %}

@@ -80,7 +80,7 @@ except RuntimeError as e:
     raise
 from src.utils.logger import get_logger, setup_logging
 from src.api.job_queue import JobQueue, Job, get_job_queue
-from src.api import training_jobs
+from src.api import training_jobs, dashboard
 
 # Setup logging
 setup_logging()
@@ -107,6 +107,7 @@ app = FastAPI(
 
 # Include routers
 app.include_router(training_jobs.router)
+app.include_router(dashboard.router)
 
 # Correlation ID middleware
 class CorrelationIDMiddleware(BaseHTTPMiddleware):
@@ -263,8 +264,13 @@ async def shutdown_event():
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    """Serve the main UI page (Home)"""
-    return templates.TemplateResponse("home.html", {"request": request})
+    """Serve the main UI page (Dashboard)"""
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+@app.get("/ui", response_class=HTMLResponse)
+async def ui_home(request: Request):
+    """Serve the UI home page (Dashboard)"""
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -447,7 +453,7 @@ if os.path.exists("templates"):
         job = job_queue.get_job(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        return templates.TemplateResponse("training_job.html", {"request": request, "job": job})
+        return templates.TemplateResponse("training_job_detailed.html", {"request": request, "job": job})
     
     @app.get("/ui/training/jobs/{job_id}/status", response_class=HTMLResponse)
     async def ui_training_job_status(request: Request, job_id: str):
@@ -574,6 +580,10 @@ if os.path.exists("templates"):
                 })
         
         return JSONResponse(gallery)
+
+    @app.get("/ui/pipeline", response_class=HTMLResponse)
+    async def ui_pipeline_monitor(request: Request):
+        return templates.TemplateResponse("pipeline_monitor.html", {"request": request})
 
     @app.get("/ui/inference/jobs/{job_id}", response_class=HTMLResponse)
     async def ui_inference_job(request: Request, job_id: str):

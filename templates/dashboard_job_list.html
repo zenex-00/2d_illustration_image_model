@@ -1,0 +1,28 @@
+{% for job in jobs %}
+<div class="job-item">
+    <div class="job-info">
+        <div class="job-id">{{ job.job_id }}</div>
+        <div class="job-type">{{ job.type.title() }} Job</div>
+        <div class="job-timestamp">
+            {% if job.created_at %}{{ job.created_at.split('T')[0] }} {{ job.created_at.split('T')[1][:8] }}{% endif %}
+        </div>
+    </div>
+    <div style="text-align: right;">
+        <div class="status-badge status-{{ job.status }}" style="margin-bottom: 5px;">
+            {{ job.status.title() }}
+        </div>
+        <div class="progress-text" style="margin-bottom: 5px;">
+            {{ "%.1f"|format(job.progress) }}%
+        </div>
+    </div>
+    <div class="job-actions">
+        <a href="/ui/{{ job.type }}/jobs/{{ job.job_id }}" class="btn btn-primary">View</a>
+        {% if job.status == 'processing' %}
+        <a href="/api/v1/jobs/{{ job.job_id }}/cancel" class="btn btn-danger"
+           hx-post="/api/v1/jobs/{{ job.job_id }}/cancel"
+           hx-target="#job-{{ job.job_id }}"
+           hx-swap="outerHTML">Cancel</a>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}

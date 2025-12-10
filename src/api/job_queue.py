@@ -39,6 +39,8 @@ class Job:
     artifacts: Dict[str, Any] = field(default_factory=dict)
     logs: list = field(default_factory=list)
     phase_status: Dict[str, Any] = field(default_factory=dict)
+    metrics_history: Dict[str, list] = field(default_factory=dict)  # Store historical metrics for charts
+    phase_details: Dict[str, Any] = field(default_factory=dict)  # Store detailed phase information
 
 
 class JobQueue:
@@ -190,13 +192,13 @@ class JobQueue:
     ) -> bool:
         """
         Update phase-specific status for a job
-        
+
         Args:
             job_id: Job ID
             phase: Phase name ("phase1" or "phase2")
             status: Phase status ("not_started" | "processing" | "completed" | "failed")
             progress: Optional progress string (e.g., "3/10")
-        
+
         Returns:
             True if updated, False if job not found
         """
@@ -204,16 +206,126 @@ class JobQueue:
         if not job:
             logger.warning("job_not_found", job_id=job_id)
             return False
-        
+
         if not hasattr(job, 'phase_status'):
             job.phase_status = {}
-        
+
         job.phase_status[f"{phase}_status"] = status
-        
+
         if progress is not None:
             job.phase_status[f"{phase}_progress"] = progress
-        
+
         logger.debug("phase_status_updated", job_id=job_id, phase=phase, status=status, progress=progress)
+        return True
+
+    def update_job_metrics(
+        self,
+        job_id: str,
+        train_loss: Optional[float] = None,
+        val_loss: Optional[float] = None,
+        current_epoch: Optional[int] = None,
+        total_epochs: Optional[int] = None,
+        progress: Optional[float] = None,
+        phase_details: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Update job metrics for training progress tracking
+
+        Args:
+            job_id: Job ID
+            train_loss: Training loss value
+            val_loss: Validation loss value
+            current_epoch: Current epoch number
+            total_epochs: Total number of epochs
+            progress: Progress percentage (0-100)
+            phase_details: Detailed phase information
+
+        Returns:
+            True if updated, False if job not found
+        """
+        job = self.jobs.get(job_id)
+        if not job:
+            logger.warning("job_not_found", job_id=job_id)
+            return False
+
+        # Update metrics
+        if train_loss is not None:
+            job.train_loss = train_loss
+            # Add to metrics history for charts
+            if "train_loss_history" not in job.metrics_history:
+                job.metrics_history["train_loss_history"] = []
+            job.metrics_history["train_loss_history"].append({
+                "value": train_loss,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
+        if val_loss is not None:
+            job.val_loss = val_loss
+            # Add to metrics history for charts
+            if "val_loss_history" not in job.metrics_history:
+                job.metrics_history["val_loss_history"] = []
+            job.metrics_history["val_loss_history"].append({
+                "value": val_loss,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
+        if current_epoch is not None:
+            job.current_epoch = current_epoch
+
+        if total_epochs is not None:
+            job.total_epochs = total_epochs
+
+        if progress is not None:
+            job.progress = progress
+
+        if phase_details is not None:
+            job.phase_details.update(phase_details)
+
+        # Calculate progress percentage if epochs are available
+        if job.total_epochs and job.current_epoch and job.total_epochs > 0:
+            calculated_progress = (job.current_epoch / job.total_epochs) * 100
+            if calculated_progress > job.progress:  # Don't decrease progress
+                job.progress = calculated_progress
+
+        logger.debug(
+            "job_metrics_updated",
+            job_id=job_id,
+            train_loss=train_loss,
+            val_loss=val_loss,
+            current_epoch=current_epoch,
+            progress=job.progress
+        )
+        return True
+
+    def add_job_log(self, job_id: str, log_entry: str, log_type: str = "info") -> bool:
+        """
+        Add a log entry to a job
+
+        Args:
+            job_id: Job ID
+            log_entry: Log message
+            log_type: Type of log ("info", "warning", "error", "debug")
+
+        Returns:
+            True if updated, False if job not found
+        """
+        job = self.jobs.get(job_id)
+        if not job:
+            logger.warning("job_not_found", job_id=job_id)
+            return False
+
+        timestamp = datetime.utcnow().isoformat()
+        job.logs.append({
+            "timestamp": timestamp,
+            "type": log_type,
+            "message": log_entry
+        })
+
+        # Limit logs to last 100 entries to prevent memory issues
+        if len(job.logs) > 100:
+            job.logs = job.logs[-100:]
+
+        logger.debug("job_log_added", job_id=job_id, log_type=log_type)
         return True
     
     def _cleanup_old_jobs(self):

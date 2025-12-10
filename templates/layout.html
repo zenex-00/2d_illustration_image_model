@@ -242,7 +242,8 @@
             <h1>🚗 Gemini 3 Pro</h1>
             <p>Vehicle-to-Vector Pipeline</p>
             <nav>
-                <a href="/ui" {% if request.url.path == "/ui" %}class="active"{% endif %}>Home</a>
+                <a href="/ui" {% if request.url.path == "/ui" or request.url.path == "/" %}class="active"{% endif %}>Dashboard</a>
+                <a href="/ui/pipeline" {% if "/ui/pipeline" in request.url.path %}class="active"{% endif %}>Pipeline</a>
                 <a href="/ui/training" {% if "/ui/training" in request.url.path %}class="active"{% endif %}>Training</a>
                 <a href="/ui/inference" {% if "/ui/inference" in request.url.path %}class="active"{% endif %}>Inference</a>
             </nav>
