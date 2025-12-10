@@ -2,6 +2,7 @@
 
 import numpy as np
 import cv2
+from pathlib import Path
 from typing import List, Tuple, Optional
 import torch
 from src.utils.logger import get_logger
@@ -34,24 +35,27 @@ class SAMSegmenter:
         """Load SAM model with retry logic"""
         try:
             from segment_anything import sam_model_registry, SamPredictor
-            
+            from src.pipeline.model_loader import get_model_loader
+
             if self.checkpoint_path is None:
                 # Default checkpoint path
                 self.checkpoint_path = f"sam_{self.model_type}_4b8939.pth"
-            
-            cache = get_model_cache()
-            
-            # Load SAM model
-            # Note: model_id is passed as first argument to model_loader lambda
-            sam = cache.load_or_cache_model(
+
+            # Use the model loader system to handle network volumes and downloads
+            model_loader = get_model_loader()
+
+            # Load SAM model using the model loader system
+            # This will check network volume first, then download if needed
+            sam = model_loader.load_from_volume_or_download(
                 model_id=self.checkpoint_path,
-                model_loader=lambda model_id, **kwargs: sam_model_registry[self.model_type](checkpoint=model_id),
-                cache_key=f"sam_{self.model_type}"
+                model_loader=lambda path, **kwargs: sam_model_registry[self.model_type](checkpoint=path),
+                model_type="direct",
+                subdir="sam"
             )
-            
+
             sam.to(device=self.device)
             self.predictor = SamPredictor(sam)
-            
+
             logger.info("sam_loaded", model_type=self.model_type, checkpoint=self.checkpoint_path)
         except Exception as e:
             raise ModelLoadError(
@@ -59,6 +63,7 @@ class SAMSegmenter:
                 message=f"Failed to load SAM: {str(e)}",
                 original_error=e
             )
+
     
     def generate_masks(
         self,

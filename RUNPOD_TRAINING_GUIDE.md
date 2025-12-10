@@ -67,14 +67,14 @@ Quick guide to train and test LoRA models on RunPod. Assumes code is on GitHub.
    
    **For RTX 3090/A10G/RTX 4090 (PyTorch 2.8.0+)**:
    ```bash
-   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && dpkg --configure -a || true && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch>=2.8.0 torchvision>=0.23.0 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && dpkg --configure -a || true && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade torch>=2.8.0 torchvision>=0.23.0 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && python download_sam_model.py --model-path /models/sam/sam_vit_h_4b8939.pth && uvicorn src.api.server:app --host 0.0.0.0 --port 8000"
    ```
    
    **Note**: PyTorch 2.8.0+ is now required for all GPUs (backward compatible). Upgrading PyTorch before installing other dependencies ensures torchvision compatibility and prevents dtype mismatch errors.
    
    **For RTX 5090 (PyTorch 2.8.0+ required - sm_120 support)**:
    ```bash
-   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && dpkg --configure -a || true && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && uvicorn src.api.server:app --host 0.0.0.0 --port 5090"
+   /bin/bash -c "export DEBIAN_FRONTEND=noninteractive && dpkg --configure -a || true && apt-get update && apt-get install -y -q git libgl1-mesa-glx libglib2.0-0 tzdata && cd /workspace && rm -rf image_generation ZoeDepth && git clone YOUR_GITHUB_URL image_generation && git clone https://github.com/isl-org/ZoeDepth.git && cd /workspace/image_generation && pip install -q --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128 && chmod +x scripts/install_dependencies.sh && bash scripts/install_dependencies.sh && export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:\$PYTHONPATH && python scripts/setup_model_volume.py --volume-path /models && python download_sam_model.py --model-path /models/sam/sam_vit_h_4b8939.pth && uvicorn src.api.server:app --host 0.0.0.0 --port 5090"
    ```
    
    **Note**: RTX 5090 requires PyTorch 2.8.0+ with CUDA 12.8+ support. CUDA 12.8 nightly builds (cu128) are confirmed to work with RTX 5090. If nightly fails, try cu129 stable builds (see troubleshooting section).
@@ -160,6 +160,7 @@ export PYTHONPATH=/workspace/image_generation:/workspace/ZoeDepth:$PYTHONPATH
 
 # 5. Setup models (takes 30-60 minutes)
 python scripts/setup_model_volume.py --volume-path /models
+python download_sam_model.py --model-path /models/sam/sam_vit_h_4b8939.pth
 
 # 6. Start server
 # For RTX 5090, use port 5090; for other GPUs, use port 8000 (or any port you configured)
@@ -643,6 +644,7 @@ ls /workspace/training_data/targets | wc -l
 cd /workspace/image_generation
 export PYTHONPATH=/workspace/image_generation:$PYTHONPATH
 python scripts/setup_model_volume.py --volume-path /models
+python download_sam_model.py --model-path /models/sam/sam_vit_h_4b8939.pth
 ```
 
 ### Disk Quota Exceeded
