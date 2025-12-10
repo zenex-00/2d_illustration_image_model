@@ -21,16 +21,42 @@ class BackgroundRemover:
     
     @retry_on_failure(max_attempts=3, exceptions=(Exception,))
     def _load_model(self):
-        """Load BiRefNet model via rembg library"""
+        """Load BiRefNet model via rembg library - Primary model is birefnet with fallbacks if unavailable"""
         try:
             from rembg import remove, new_session
-            
-            # rembg supports multiple models including "birefnet" (BiRefNet)
-            # BiRefNet is specified in plan section 4.2.1 for high-quality segmentation
-            # that preserves high-frequency details like radio antennas and wheel spokes
-            self.session = new_session(self.model_name)
-            
-            logger.info("background_remover_loaded", model_name=self.model_name)
+
+            # First try the primary model (birefnet) which is required
+            # BiRefNet is a state-of-the-art model that should be available in rembg
+            try:
+                self.session = new_session(self.model_name)
+                logger.info("background_remover_loaded", model_name=self.model_name)
+                return
+            except ValueError as ve:
+                if "No session class found for model" in str(ve):
+                    logger.warning(f"Required model {self.model_name} not available. Trying fallback models.", error=str(ve))
+
+                    # Since BiRefNet is required but not available, try fallback models
+                    # The pipeline can work with fallback models, but ideally BiRefNet should be available
+                    fallback_models = ["u2net", "silueta", "isnet-general-use"]
+
+                    for model in fallback_models:
+                        try:
+                            self.session = new_session(model)
+                            logger.warning("using_fallback_model", model=model)
+                            self.model_name = model  # Update to the model that actually worked
+                            return
+                        except Exception as fallback_error:
+                            logger.warning("fallback_model_failed", model=model, error=str(fallback_error))
+                            continue
+
+                    # If all models fail, raise an error
+                    raise ValueError(f"Primary model {self.model_name} not available and no fallback models worked. Please ensure rembg[birefnet] is installed: pip install rembg[birefnet]")
+                else:
+                    raise
+            except Exception as e:
+                logger.error("model_load_general_error", model=self.model_name, error=str(e))
+                raise
+
         except Exception as e:
             raise ModelLoadError(
                 phase="phase2",

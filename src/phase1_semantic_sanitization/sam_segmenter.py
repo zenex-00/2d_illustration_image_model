@@ -115,24 +115,24 @@ class SAMSegmenter:
             combined_mask = masks.sum(dim=0).cpu().numpy().astype(np.uint8)
             combined_mask = np.clip(combined_mask, 0, 1)
             
-            # Validate mask quality
+            # Validate mask quality before dilation
             if combined_mask.sum() == 0:
                 logger.warning("sam_empty_mask", message="Generated mask is empty")
                 return np.zeros(image.shape[:2], dtype=np.uint8)
-            
+
             # Apply dilation for surgical buffer
             kernel_size = dilation_kernel or self.dilation_kernel
             if kernel_size > 0:
                 kernel = np.ones((kernel_size, kernel_size), np.uint8)
                 combined_mask = cv2.dilate(combined_mask, kernel, iterations=1)
-            
+
             logger.info(
                 "sam_masks_generated",
                 num_boxes=len(boxes),
                 mask_area=combined_mask.sum(),
                 dilation_kernel=kernel_size
             )
-            
+
             return combined_mask.astype(np.uint8)
             
         except Exception as e:

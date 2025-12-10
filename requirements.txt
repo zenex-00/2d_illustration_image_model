@@ -32,7 +32,7 @@ lama-cleaner>=1.2.0
 controlnet-aux>=0.0.10
 
 # Background Removal
-rembg>=2.0.50
+rembg[birefnet]>=2.0.50
 onnxruntime>=1.16.0  # Required by rembg for ONNX model inference
 
 # Depth Estimation

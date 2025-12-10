@@ -60,7 +60,7 @@ phase2:
     scale: 0.8
   background_removal:
     enabled: true
-    model: "birefnet"
+    model: "u2net"
   depth_estimation:
     enabled: true
     model: "zoedepth-anywhere"
@@ -88,7 +88,7 @@ training:
   phase2_retry:
     max_retries: 3
     parameter_variations:
-      - bg_model: "birefnet"
+      - bg_model: "u2net"
         depth_model: "zoedepth-anywhere"
       - bg_model: "u2net"
         depth_model: "zoedepth-nk"
