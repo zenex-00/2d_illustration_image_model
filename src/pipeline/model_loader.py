@@ -65,7 +65,12 @@ class ModelLoader:
             model_path = self.volume_dir / (subdir or repo_name)
         else:
             # Direct file models
-            model_path = self.volume_dir / (subdir or model_id)
+            if subdir:
+                # If subdir is provided, model file is in that subdirectory
+                model_path = self.volume_dir / subdir / model_id
+            else:
+                # If no subdir, model file is directly in volume directory
+                model_path = self.volume_dir / model_id
         
         if model_path.exists():
             logger.info("model_found_on_volume", model_id=model_id, path=str(model_path))
