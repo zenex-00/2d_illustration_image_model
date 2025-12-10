@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 class DepthEstimator:
     """ZoeDepth for depth map generation"""
     
-    def __init__(self, model_type: str = "zoedepth-anywhere", device: str = "cuda"):
+    def __init__(self, model_type: str = "zoedepth", device: str = "cuda"):
         """Initialize depth estimator (lazy loading)"""
         self.model_type = model_type
         self.device = device
@@ -26,24 +26,40 @@ class DepthEstimator:
         try:
             from zoedepth.models.builder import build_model
             from zoedepth.utils.config import get_config as get_zoedepth_config
-            
+
             cache = get_model_cache()
-            
+
             # Get config (using aliased import to avoid conflict with pipeline config)
-            conf = get_zoedepth_config(self.model_type, "infer", pretrained_resource="local")
-            
+            # ZoeDepth expects pretrained_resource to be in format "local::" or "url::"
+            # For local models, use the appropriate config for the model type
+            conf = get_zoedepth_config(self.model_type, "infer", pretrained_resource="local::")
+
             # Build model
             self.model = build_model(conf)
             self.model = self.model.to(self.device)
             self.model.eval()
-            
+
             logger.info("depth_estimator_loaded", model_type=self.model_type)
         except Exception as e:
-            raise ModelLoadError(
-                phase="phase2",
-                message=f"Failed to load depth estimator: {str(e)}",
-                original_error=e
-            )
+            # If the specific model type fails, try default zoedepth model
+            try:
+                logger.warning("depth_estimator_model_type_failed", model_type=self.model_type, error=str(e))
+
+                # Try default zoedepth config
+                conf = get_zoedepth_config("zoedepth", "infer", pretrained_resource="local::")
+                self.model = build_model(conf)
+                self.model = self.model.to(self.device)
+                self.model.eval()
+
+                logger.info("depth_estimator_loaded_default", model_type="zoedepth")
+                return
+            except Exception as fallback_error:
+                logger.error("depth_estimator_fallback_failed", error=str(fallback_error))
+                raise ModelLoadError(
+                    phase="phase2",
+                    message=f"Failed to load depth estimator: {str(e)}, fallback also failed: {str(fallback_error)}",
+                    original_error=e
+                )
     
     def estimate_depth(self, image: np.ndarray) -> np.ndarray:
         """
