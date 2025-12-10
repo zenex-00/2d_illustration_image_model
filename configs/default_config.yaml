@@ -60,10 +60,10 @@ phase2:
     scale: 0.8
   background_removal:
     enabled: true
-    model: "u2net"
+    model: "birefnet"
   depth_estimation:
     enabled: true
-    model: "zoedepth-anywhere"
+    model: "zoedepth"
   edge_detection:
     enabled: true
 
@@ -88,12 +88,12 @@ training:
   phase2_retry:
     max_retries: 3
     parameter_variations:
-      - bg_model: "u2net"
-        depth_model: "zoedepth-anywhere"
+      - bg_model: "birefnet"
+        depth_model: "zoedepth"
       - bg_model: "u2net"
         depth_model: "zoedepth-nk"
       - bg_model: "silueta"
-        depth_model: "zoedepth-anywhere"
+        depth_model: "zoedepth"
     skip_on_failure: false  # Exclude failed images instead of using placeholders
 
 phase3:

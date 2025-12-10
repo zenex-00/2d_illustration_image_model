@@ -33,10 +33,24 @@ class BackgroundRemover:
                 return
             except ValueError as ve:
                 if "No session class found for model" in str(ve):
-                    logger.warning(f"Required model {self.model_name} not available. Trying fallback models.", error=str(ve))
+                    logger.warning(f"Required model {self.model_name} not available. Trying alternative names and fallback models.", error=str(ve))
 
-                    # Since BiRefNet is required but not available, try fallback models
-                    # The pipeline can work with fallback models, but ideally BiRefNet should be available
+                    # BiRefNet might be available under different names depending on rembg version
+                    # Try possible variations of BiRefNet name before falling back to other models
+                    birefnet_variants = ["birefnet", "BiRefNet", "zhengpeng7/birefnet", "zhengpeng7/BiRefNet"]
+
+                    for variant in birefnet_variants:
+                        if variant.lower() != self.model_name.lower():
+                            try:
+                                self.session = new_session(variant)
+                                logger.info("background_remover_loaded_variant", model_name=variant)
+                                self.model_name = variant  # Update to the model that actually worked
+                                return
+                            except Exception as variant_error:
+                                logger.warning("birefnet_variant_failed", model=variant, error=str(variant_error))
+                                continue
+
+                    # If BiRefNet variants fail, try fallback models
                     fallback_models = ["u2net", "silueta", "isnet-general-use"]
 
                     for model in fallback_models:
@@ -50,7 +64,7 @@ class BackgroundRemover:
                             continue
 
                     # If all models fail, raise an error
-                    raise ValueError(f"Primary model {self.model_name} not available and no fallback models worked. Please ensure rembg[birefnet] is installed: pip install rembg[birefnet]")
+                    raise ValueError(f"Primary model {self.model_name} and its variants not available, and no fallback models worked. Please ensure rembg is properly installed: pip install 'rembg>=2.0.69'")
                 else:
                     raise
             except Exception as e:
